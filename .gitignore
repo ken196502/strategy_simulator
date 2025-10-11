@@ -303,3 +303,4 @@ cython_debug/
 # *.html
 # *.csv
 backend/static/
+backend/data.db
