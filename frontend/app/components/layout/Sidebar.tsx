@@ -1,12 +1,23 @@
-import React from 'react'
+import { PieChart, ArrowLeftRight } from 'lucide-react'
 
 export default function Sidebar() {
   return (
-    <aside className="w-64 border-r h-full p-4">
-      <nav className="space-y-2 text-sm">
-        <div className="text-muted-foreground">Navigation</div>
-        <a className="block hover:underline" href="#portfolio">Portfolio</a>
-        <a className="block hover:underline" href="#trading">Trading</a>
+    <aside className="w-16 border-r h-full p-2 flex flex-col items-center">
+      <nav className="space-y-4">
+        <a 
+          className="flex items-center justify-center w-10 h-10 rounded-lg hover:bg-gray-100 transition-colors" 
+          href="#portfolio"
+          title="Portfolio"
+        >
+          <PieChart className="w-5 h-5 text-gray-600" />
+        </a>
+        <a 
+          className="flex items-center justify-center w-10 h-10 rounded-lg hover:bg-gray-100 transition-colors" 
+          href="#trading"
+          title="Trading"
+        >
+          <ArrowLeftRight className="w-5 h-5 text-gray-600" />
+        </a>
       </nav>
     </aside>
   )

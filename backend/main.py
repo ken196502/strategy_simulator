@@ -42,9 +42,18 @@ def on_startup():
             demo = User(
                 version="v1",
                 username="demo",
-                initial_capital=100000.0,
-                current_cash=100000.0,
-                frozen_cash=0.0,
+                # USD fields
+                initial_capital_usd=100000.0,
+                current_cash_usd=100000.0,
+                frozen_cash_usd=0.0,
+                # HKD fields
+                initial_capital_hkd=780000.0,
+                current_cash_hkd=780000.0,
+                frozen_cash_hkd=0.0,
+                # CNY fields
+                initial_capital_cny=720000.0,
+                current_cash_cny=720000.0,
+                frozen_cash_cny=0.0,
             )
             db.add(demo)
             db.commit()

@@ -1,9 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import './index.css'
 
 // Create a module-level WebSocket singleton to avoid duplicate connections in React StrictMode
@@ -12,9 +10,39 @@ let __WS_SINGLETON__: WebSocket | null = null;
 import Header from '@/components/layout/Header'
 import Sidebar from '@/components/layout/Sidebar'
 import MarketStatus from '@/components/trading/MarketStatus'
-import NetValueChart from '@/components/portfolio/NetValueChart'
+import TradingPanel from '@/components/trading/TradingPanel'
+import MultiCurrencyBalance from '@/components/portfolio/MultiCurrencyBalance'
 
-interface Overview { user: { id: number; username: string; current_cash: number; initial_capital: number; frozen_cash: number }; total_assets: number; positions_value: number }
+interface CurrencyBalance {
+  initial_capital: number
+  current_cash: number
+  frozen_cash: number
+}
+
+interface User {
+  id: number
+  username: string
+  initial_capital_usd: number
+  current_cash_usd: number
+  frozen_cash_usd: number
+  initial_capital_hkd: number
+  current_cash_hkd: number
+  frozen_cash_hkd: number
+  initial_capital_cny: number
+  current_cash_cny: number
+  frozen_cash_cny: number
+}
+
+interface Overview { 
+  user: User
+  balances_by_currency: {
+    usd: CurrencyBalance
+    hkd: CurrencyBalance
+    cny: CurrencyBalance
+  }
+  total_assets_usd: number
+  positions_value_usd: number
+}
 interface Position { id: number; user_id: number; symbol: string; name: string; market: string; quantity: number; available_quantity: number; avg_cost: number }
 interface Order { id: number; order_no: string; symbol: string; name: string; market: string; side: string; order_type: string; price?: number; quantity: number; filled_quantity: number; status: string }
 interface Trade { id: number; order_id: number; user_id: number; symbol: string; name: string; market: string; side: string; price: number; quantity: number; commission: number; exchange_rate: number; trade_time: string }
@@ -85,101 +113,65 @@ function App() {
   if (!userId || !overview) return <div className="p-8">Connecting to trading server...</div>
 
   return (
-    <div className="h-screen flex flex-col">
-      <Header />
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar />
-        <main className="flex-1 p-6 overflow-y-auto space-y-6">
-          <div className="flex items-center justify-between">
+    <div className="h-screen flex overflow-hidden">
+      <Sidebar />
+      <div className="flex-1 flex flex-col">
+        <Header />
+        <main className="flex-1 p-6 overflow-hidden">
+          <div className="flex items-center justify-between mb-6">
             <h2 id="portfolio" className="text-xl font-semibold">Portfolio</h2>
             <MarketStatus />
           </div>
 
-          <div className="grid grid-cols-3 gap-4 text-sm">
-            <div className="rounded border p-3">
-              <div className="text-muted-foreground">Cash</div>
-              <div className="text-xl font-semibold">${overview.user.current_cash.toFixed(2)}</div>
+          <div className="mb-6">
+            <MultiCurrencyBalance 
+              balances={overview.balances_by_currency}
+              totalAssetsUsd={overview.total_assets_usd}
+              positionsValueUsd={overview.positions_value_usd}
+            />
+          </div>
+          <h2 id="trading" className="text-xl font-semibold mb-6">Trading</h2>
+
+          <div className="flex gap-6 h-[calc(100vh-400px)]">
+            {/* Trading Panel - Left Side */}
+            <div className="flex-shrink-0">
+              <TradingPanel 
+                onPlace={placeOrder}
+                balances={overview.balances_by_currency}
+              />
             </div>
-            <div className="rounded border p-3">
-              <div className="text-muted-foreground">Positions Value</div>
-              <div className="text-xl font-semibold">${overview.positions_value.toFixed(2)}</div>
-            </div>
-            <div className="rounded border p-3">
-              <div className="text-muted-foreground">Total Assets</div>
-              <div className="text-xl font-semibold">${overview.total_assets.toFixed(2)}</div>
+
+            {/* Tabbed Content - Right Side */}
+            <div className="flex-1 overflow-hidden">
+              <Tabs defaultValue="positions" className="h-full flex flex-col">
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="positions">Positions</TabsTrigger>
+                  <TabsTrigger value="orders">Orders</TabsTrigger>
+                  <TabsTrigger value="trades">Trades</TabsTrigger>
+                </TabsList>
+                
+                <div className="flex-1 overflow-hidden">
+                  <TabsContent value="positions" className="h-full overflow-y-auto">
+                    <PositionListWS positions={positions} />
+                  </TabsContent>
+                  
+                  <TabsContent value="orders" className="h-full overflow-y-auto">
+                    <OrderBookWS orders={orders} />
+                  </TabsContent>
+                  
+                  <TabsContent value="trades" className="h-full overflow-y-auto">
+                    <TradeHistoryWS trades={trades} />
+                  </TabsContent>
+                </div>
+              </Tabs>
             </div>
           </div>
-          <NetValueChart />
-
-          <h2 id="trading" className="text-xl font-semibold">Trading</h2>
-
-          <div className="space-y-2">
-            <OrderFormWS onPlace={placeOrder} />
-          </div>
-
-          <OrderBookWS orders={orders} />
-          <PositionListWS positions={positions} />
-          <TradeHistoryWS trades={trades} />
         </main>
       </div>
     </div>
   )
 }
 
-function OrderFormWS({ onPlace }: { onPlace: (payload: any) => void }) {
-  const [symbol, setSymbol] = useState('AAPL')
-  const [name, setName] = useState('Apple')
-  const [market, setMarket] = useState<'US' | 'HK'>('US')
-  const [side, setSide] = useState<'BUY' | 'SELL'>('BUY')
-  const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT'>('MARKET')
-  const [price, setPrice] = useState<string>('')
-  const [quantity, setQuantity] = useState<number>(100)
-
-  return (
-    <div className="space-y-2">
-      <div className="grid grid-cols-2 gap-2">
-        <label className="text-sm">Symbol<Input value={symbol} onChange={(e) => setSymbol(e.target.value)} /></label>
-        <label className="text-sm">Name<Input value={name} onChange={(e) => setName(e.target.value)} /></label>
-        <label className="text-sm">Market
-          <Select value={market} onValueChange={(v) => setMarket(v as 'US' | 'HK')}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select market" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="US">US</SelectItem>
-              <SelectItem value="HK">HK</SelectItem>
-            </SelectContent>
-          </Select>
-        </label>
-        <label className="text-sm">Side
-          <Select value={side} onValueChange={(v) => setSide(v as 'BUY' | 'SELL')}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select side" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="BUY">BUY</SelectItem>
-              <SelectItem value="SELL">SELL</SelectItem>
-            </SelectContent>
-          </Select>
-        </label>
-        <label className="text-sm">Type
-          <Select value={orderType} onValueChange={(v) => setOrderType(v as 'MARKET' | 'LIMIT')}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="MARKET">MARKET</SelectItem>
-              <SelectItem value="LIMIT">LIMIT</SelectItem>
-            </SelectContent>
-          </Select>
-        </label>
-        <label className="text-sm">Price (if LIMIT)<Input value={price} onChange={(e) => setPrice(e.target.value)} /></label>
-        <label className="text-sm">Quantity<Input type="number" value={quantity} onChange={(e) => setQuantity(parseInt(e.target.value || '0'))} /></label>
-      </div>
-      <Button onClick={() => onPlace({ symbol, name, market, side, order_type: orderType, price: price ? parseFloat(price) : undefined, quantity })}>Place Order</Button>
-    </div>
-  )
-}
 
 function OrderBookWS({ orders }: { orders: Order[] }) {
   return (
@@ -237,7 +229,6 @@ function PositionListWS({ positions }: { positions: Position[] }) {
 function TradeHistoryWS({ trades }: { trades: Trade[] }) {
   return (
     <div>
-      <h3 className="text-lg font-semibold mt-6 mb-2">Trade History</h3>
       <Table>
         <TableHeader>
           <TableRow>
