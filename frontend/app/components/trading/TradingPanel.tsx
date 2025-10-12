@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useTranslation } from '@/lib/i18n'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
@@ -18,6 +19,7 @@ interface TradingPanelProps {
 }
 
 export default function TradingPanel({ onPlace, balances }: TradingPanelProps) {
+  const { t } = useTranslation()
   const [symbol, setSymbol] = useState('00005')
   const [name, setName] = useState('HSBC Holdings')
   const [market, setMarket] = useState<'US' | 'HK' | 'CN'>('HK')
@@ -105,13 +107,13 @@ export default function TradingPanel({ onPlace, balances }: TradingPanelProps) {
       <div className="space-y-2">
         <label className="text-xs">Market</label>
         <Select value={market} onValueChange={(v) => setMarket(v as 'US' | 'HK' | 'CN')}>
-          <SelectTrigger className="bg-input text-xs h-8">
+          <SelectTrigger className="text-xs h-8">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="US">US Stock ({currencySymbols.usd})</SelectItem>
-            <SelectItem value="HK">HK Stock ({currencySymbols.hkd})</SelectItem>
-            <SelectItem value="CN">A-Share ({currencySymbols.cny})</SelectItem>
+            <SelectItem value="US">{t('trading.us')} ({currencySymbols.usd})</SelectItem>
+            <SelectItem value="HK">{t('trading.hk')} ({currencySymbols.hkd})</SelectItem>
+            <SelectItem value="CN">{t('trading.cn')} ({currencySymbols.cny})</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -131,7 +133,7 @@ export default function TradingPanel({ onPlace, balances }: TradingPanelProps) {
       {/* 订单类型 */}
       <div className="space-y-2">
         <div className="flex items-center gap-1">
-          <label className="text-xs text-muted-foreground">Order Type</label>
+          <label className="text-xs text-muted-foreground">{t('trading.orderType')}</label>
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-info w-3 h-3 text-muted-foreground">
             <circle cx="12" cy="12" r="10"></circle>
             <path d="M12 16v-4"></path>
@@ -139,7 +141,7 @@ export default function TradingPanel({ onPlace, balances }: TradingPanelProps) {
           </svg>
         </div>
         <Select value={orderType} onValueChange={(v) => setOrderType(v as 'MARKET' | 'LIMIT')}>
-          <SelectTrigger className="bg-input text-xs h-6">
+          <SelectTrigger className="text-xs h-6">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -206,24 +208,24 @@ export default function TradingPanel({ onPlace, balances }: TradingPanelProps) {
       {/* 交易信息 */}
       <div className="space-y-3 pt-4">
         <div className="flex justify-between">
-          <span className="text-xs">Amount</span>
+          <span className="text-xs">{t('trading.amount')}</span>
           <span className="text-xs">{currencySymbol}{amount.toFixed(2)}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-xs">Available Cash</span>
+          <span className="text-xs">{t('trading.availableCash')}</span>
           <span className="text-xs text-[#16BA71]">{currencySymbol}{cashAvailable.toFixed(2)}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-xs">Frozen Cash</span>
+          <span className="text-xs">{t('trading.frozenCash')}</span>
           <span className="text-xs text-orange-500">{currencySymbol}{frozenCash.toFixed(2)}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-xs">Sellable Position</span>
+          <span className="text-xs">{t('trading.sellablePosition')}</span>
           <span className="text-xs text-[#F44345]">{positionAvailable}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-xs">Max Buyable</span>
-          <span className="text-xs">{maxBuyable} shares</span>
+          <span className="text-xs">{t('trading.maxBuyable')}</span>
+          <span className="text-xs">{maxBuyable} {t('trading.shares')}</span>
         </div>
       </div>
 
@@ -233,13 +235,13 @@ export default function TradingPanel({ onPlace, balances }: TradingPanelProps) {
           className="flex-1 text-xs h-6 rounded-xl bg-[#F44345] hover:bg-[#d63b3d] text-white"
           onClick={handleBuy}
         >
-          Buy
+          {t('trading.buy')}
         </Button>
         <Button 
           className="flex-1 text-xs h-6 rounded-xl bg-[#16BA71] hover:bg-[#10975c] text-white"
           onClick={handleSell}
         >
-          Sell
+          {t('trading.sell')}
         </Button>
       </div>
     </div>

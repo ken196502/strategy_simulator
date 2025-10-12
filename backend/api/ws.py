@@ -7,7 +7,7 @@ from database.connection import SessionLocal
 from repositories.user_repo import get_or_create_user, get_user
 from repositories.order_repo import list_orders
 from repositories.position_repo import list_positions
-from services.asset_calculator import calc_positions_value
+from services.asset_calculator import calc_positions_value, calc_positions_value_by_currency
 from services.order_executor import place_and_execute
 from database.models import Trade
 
@@ -52,8 +52,9 @@ async def _send_snapshot(db: Session, user_id: int):
     trades = (
         db.query(Trade).filter(Trade.user_id == user_id).order_by(Trade.trade_time.desc()).limit(200).all()
     )
-    positions_value = calc_positions_value(db, user_id)
-    
+    positions_value_usd = calc_positions_value(db, user_id)
+    positions_value_by_currency = calc_positions_value_by_currency(db, user_id)
+
     # 构建多币种余额信息
     balances_by_currency = {
         "usd": {
@@ -93,8 +94,9 @@ async def _send_snapshot(db: Session, user_id: int):
             "frozen_cash_cny": float(user.frozen_cash_cny),
         },
         "balances_by_currency": balances_by_currency,
-        "total_assets_usd": positions_value + total_cash_usd,
-        "positions_value_usd": positions_value,
+        "positions_value_by_currency": positions_value_by_currency,
+        "total_assets_usd": positions_value_usd + total_cash_usd,
+        "positions_value_usd": positions_value_usd,
     }
     await manager.send_to_user(user_id, {
         "type": "snapshot",

@@ -15,6 +15,11 @@ interface MultiCurrencyBalanceProps {
   }
   totalAssetsUsd: number
   positionsValueUsd: number
+  positionsValueByCurrency: {
+    usd: number
+    hkd: number
+    cny: number
+  }
 }
 
 const currencySymbols = {
@@ -23,17 +28,21 @@ const currencySymbols = {
   cny: '¥'
 }
 
+import { useTranslation } from '@/lib/i18n'
+
 const currencyNames = {
-  usd: 'USD (US Market)',
-  hkd: 'HKD (HK Market)', 
-  cny: 'CNY (A-Share Market)'
-}
+  usd: 'currency.usd',
+  hkd: 'currency.hkd', 
+  cny: 'currency.cny'
+} as const
 
 export default function MultiCurrencyBalance({ 
   balances, 
   totalAssetsUsd, 
-  positionsValueUsd 
+  positionsValueUsd,
+  positionsValueByCurrency,
 }: MultiCurrencyBalanceProps) {
+  const { t } = useTranslation()
   const formatCurrency = (amount: number, currency: keyof typeof currencySymbols) => {
     return `${currencySymbols[currency]}${amount.toLocaleString('en-US', { 
       minimumFractionDigits: 2, 
@@ -41,9 +50,11 @@ export default function MultiCurrencyBalance({
     })}`
   }
 
-  const calculatePnL = (balance: CurrencyBalance) => {
-    const pnl = balance.current_cash - balance.initial_capital
-    const pnlPercent = (pnl / balance.initial_capital) * 100
+  const calculatePnL = (balance: CurrencyBalance, currency: keyof typeof currencySymbols) => {
+    const positionsValue = positionsValueByCurrency[currency]
+    const equity = balance.current_cash + balance.frozen_cash + positionsValue
+    const pnl = equity - balance.initial_capital
+    const pnlPercent = balance.initial_capital !== 0 ? (pnl / balance.initial_capital) * 100 : 0
     return { pnl, pnlPercent }
   }
 
@@ -52,13 +63,13 @@ export default function MultiCurrencyBalance({
       {/* 总览卡片 */}
       <div className="grid grid-cols-2 gap-4">
         <Card className="p-4">
-          <div className="text-sm text-muted-foreground mb-1">Total Assets (USD)</div>
+          <div className="text-sm text-muted-foreground mb-1">{t('portfolio.totalAssets')}</div>
           <div className="text-2xl font-bold text-blue-600">
             {formatCurrency(totalAssetsUsd, 'usd')}
           </div>
         </Card>
         <Card className="p-4">
-          <div className="text-sm text-muted-foreground mb-1">Positions Value (USD)</div>
+          <div className="text-sm text-muted-foreground mb-1">{t('portfolio.positionsValue')}</div>
           <div className="text-2xl font-bold text-green-600">
             {formatCurrency(positionsValueUsd, 'usd')}
           </div>
@@ -66,18 +77,17 @@ export default function MultiCurrencyBalance({
       </div>
 
       {/* 各币种详情 */}
-      <div className="space-y-4">
-        <h3 className="text-lg font-semibold">Currency Balances</h3>
-        
-        {Object.entries(balances).map(([currency, balance]) => {
-          const { pnl, pnlPercent } = calculatePnL(balance)
+      <div className="space-y-4">        
+        <div className="grid grid-cols-3 gap-4">
+          {Object.entries(balances).map(([currency, balance]) => {
           const currencyKey = currency as keyof typeof currencySymbols
+          const { pnl, pnlPercent } = calculatePnL(balance, currencyKey)
           
           return (
             <Card key={currency} className="p-4">
               <div className="flex items-center justify-between mb-3">
                 <h4 className="font-medium text-base">
-                  {currencyNames[currencyKey]}
+                  {t(currencyNames[currencyKey])}
                 </h4>
                 <div className="text-right">
                   <div className={`text-sm font-medium ${
@@ -95,19 +105,19 @@ export default function MultiCurrencyBalance({
               
               <div className="grid grid-cols-3 gap-4 text-sm">
                 <div>
-                  <div className="text-muted-foreground mb-1">Available Cash</div>
+                  <div className="text-muted-foreground mb-1">{t('portfolio.availableCash')}</div>
                   <div className="font-medium">
                     {formatCurrency(balance.current_cash, currencyKey)}
                   </div>
                 </div>
                 <div>
-                  <div className="text-muted-foreground mb-1">Frozen Cash</div>
+                  <div className="text-muted-foreground mb-1">{t('portfolio.frozenCash')}</div>
                   <div className="font-medium text-orange-600">
                     {formatCurrency(balance.frozen_cash, currencyKey)}
                   </div>
                 </div>
                 <div>
-                  <div className="text-muted-foreground mb-1">Initial Capital</div>
+                  <div className="text-muted-foreground mb-1">{t('portfolio.initialCapital')}</div>
                   <div className="font-medium text-gray-600">
                     {formatCurrency(balance.initial_capital, currencyKey)}
                   </div>
@@ -117,7 +127,7 @@ export default function MultiCurrencyBalance({
               {/* 进度条显示可用资金比例 */}
               <div className="mt-3">
                 <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                  <span>Cash Usage</span>
+                  <span>{t('portfolio.cashUsage')}</span>
                   <span>
                     {((balance.initial_capital - balance.current_cash) / balance.initial_capital * 100).toFixed(1)}%
                   </span>
@@ -134,6 +144,7 @@ export default function MultiCurrencyBalance({
             </Card>
           )
         })}
+        </div>
       </div>
     </div>
   )

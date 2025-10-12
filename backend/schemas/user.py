@@ -51,3 +51,4 @@ class AccountOverview(BaseModel):
     balances_by_currency: UserBalancesByCurrency
     total_assets_usd: float  # 所有资产折算成USD的总值
     positions_value_usd: float  # 所有持仓折算成USD的总值
+    positions_value_by_currency: dict  # 各币种持仓市值（本币）

@@ -3,13 +3,13 @@ import ReactDOM from 'react-dom/client'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import './index.css'
+import { LanguageProvider, useTranslation } from '@/lib/i18n'
+import Header from '@/components/layout/Header'
 
 // Create a module-level WebSocket singleton to avoid duplicate connections in React StrictMode
 let __WS_SINGLETON__: WebSocket | null = null;
 
-import Header from '@/components/layout/Header'
 import Sidebar from '@/components/layout/Sidebar'
-import MarketStatus from '@/components/trading/MarketStatus'
 import TradingPanel from '@/components/trading/TradingPanel'
 import MultiCurrencyBalance from '@/components/portfolio/MultiCurrencyBalance'
 
@@ -42,12 +42,14 @@ interface Overview {
   }
   total_assets_usd: number
   positions_value_usd: number
+  positions_value_by_currency: { usd: number; hkd: number; cny: number }
 }
 interface Position { id: number; user_id: number; symbol: string; name: string; market: string; quantity: number; available_quantity: number; avg_cost: number }
 interface Order { id: number; order_no: string; symbol: string; name: string; market: string; side: string; order_type: string; price?: number; quantity: number; filled_quantity: number; status: string }
 interface Trade { id: number; order_id: number; user_id: number; symbol: string; name: string; market: string; side: string; price: number; quantity: number; commission: number; exchange_rate: number; trade_time: string }
 
 function App() {
+  const { t } = useTranslation()
   const [userId, setUserId] = useState<number | null>(null)
   const [overview, setOverview] = useState<Overview | null>(null)
   const [positions, setPositions] = useState<Position[]>([])
@@ -116,22 +118,16 @@ function App() {
     <div className="h-screen flex overflow-hidden">
       <Sidebar />
       <div className="flex-1 flex flex-col">
-        <Header />
-        <main className="flex-1 p-6 overflow-hidden">
-          <div className="flex items-center justify-between mb-6">
-            <h2 id="portfolio" className="text-xl font-semibold">Portfolio</h2>
-            <MarketStatus />
-          </div>
-
+       <Header />
+       <main className="flex-1 p-6 overflow-hidden">
           <div className="mb-6">
             <MultiCurrencyBalance 
               balances={overview.balances_by_currency}
               totalAssetsUsd={overview.total_assets_usd}
               positionsValueUsd={overview.positions_value_usd}
+              positionsValueByCurrency={overview.positions_value_by_currency}
             />
           </div>
-          <h2 id="trading" className="text-xl font-semibold mb-6">Trading</h2>
-
           <div className="flex gap-6 h-[calc(100vh-400px)]">
             {/* Trading Panel - Left Side */}
             <div className="flex-shrink-0">
@@ -145,9 +141,9 @@ function App() {
             <div className="flex-1 overflow-hidden">
               <Tabs defaultValue="positions" className="h-full flex flex-col">
                 <TabsList className="grid w-full grid-cols-3">
-                  <TabsTrigger value="positions">Positions</TabsTrigger>
-                  <TabsTrigger value="orders">Orders</TabsTrigger>
-                  <TabsTrigger value="trades">Trades</TabsTrigger>
+                  <TabsTrigger value="positions">{t('tabs.positions')}</TabsTrigger>
+                  <TabsTrigger value="orders">{t('tabs.orders')}</TabsTrigger>
+                  <TabsTrigger value="trades">{t('tabs.trades')}</TabsTrigger>
                 </TabsList>
                 
                 <div className="flex-1 overflow-hidden">
@@ -256,6 +252,8 @@ function TradeHistoryWS({ trades }: { trades: Trade[] }) {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    <LanguageProvider>
+      <App />
+    </LanguageProvider>
   </React.StrictMode>,
 )
