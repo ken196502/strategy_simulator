@@ -1,3 +1,4 @@
+from decimal import Decimal
 from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from typing import Dict, Set
@@ -7,8 +8,11 @@ from database.connection import SessionLocal
 from repositories.user_repo import get_or_create_user, get_user
 from repositories.order_repo import list_orders
 from repositories.position_repo import list_positions
-from services.asset_calculator import calc_positions_value, calc_positions_value_by_currency
-from services.order_executor import place_and_execute
+from services.asset_calculator import MARKET_TO_USD_RATE
+from services.market_data import get_last_price
+from services.order_service import place_order, execute_order, cancel_order
+from services.hk_stock_info import get_hk_stock_info
+from services.xueqiu import XueqiuMarketDataError, set_xueqiu_cookie_string
 from database.models import Trade
 
 
@@ -52,8 +56,65 @@ async def _send_snapshot(db: Session, user_id: int):
     trades = (
         db.query(Trade).filter(Trade.user_id == user_id).order_by(Trade.trade_time.desc()).limit(200).all()
     )
-    positions_value_usd = calc_positions_value(db, user_id)
-    positions_value_by_currency = calc_positions_value_by_currency(db, user_id)
+    market_data_status = {"status": "ok"}
+    positions_with_market = []
+    totals_native = {"usd": Decimal("0"), "hkd": Decimal("0"), "cny": Decimal("0")}
+    total_positions_value_usd = Decimal("0")
+    market_error: Exception | None = None
+
+    currency_key_by_market = {"US": "usd", "HK": "hkd", "CN": "cny"}
+
+    for p in positions:
+        last_price_value: Decimal | None = None
+        market_value = Decimal("0")
+        try:
+            last_price_value = Decimal(str(get_last_price(p.symbol, p.market)))
+            market_value = last_price_value * Decimal(p.quantity)
+        except XueqiuMarketDataError as exc:
+            market_error = exc
+        except Exception as exc:
+            market_error = exc
+
+        if market_error is None and last_price_value is not None:
+            currency_key = currency_key_by_market.get(p.market)
+            if currency_key and currency_key in totals_native:
+                totals_native[currency_key] += market_value
+                fx_rate = MARKET_TO_USD_RATE.get(p.market, Decimal("1"))
+                total_positions_value_usd += market_value * fx_rate
+
+        market_value_payload = float(market_value) if last_price_value is not None else None
+
+        positions_with_market.append({
+            "id": p.id,
+            "user_id": p.user_id,
+            "symbol": p.symbol,
+            "name": p.name,
+            "market": p.market,
+            "quantity": p.quantity,
+            "available_quantity": p.available_quantity,
+            "avg_cost": float(p.avg_cost),
+            "last_price": float(last_price_value) if last_price_value is not None else None,
+            "market_value": market_value_payload,
+        })
+
+    if market_error is not None:
+        totals_native = {"usd": Decimal("0"), "hkd": Decimal("0"), "cny": Decimal("0")}
+        total_positions_value_usd = Decimal("0")
+        if isinstance(market_error, XueqiuMarketDataError):
+            market_data_status = {
+                "status": "error",
+                "code": "XUEQIU_COOKIE_REQUIRED",
+                "message": str(market_error),
+            }
+        else:
+            market_data_status = {
+                "status": "error",
+                "code": "MARKET_DATA_ERROR",
+                "message": str(market_error),
+            }
+
+    positions_value_by_currency = {k: float(v) for k, v in totals_native.items()}
+    positions_value_usd = float(total_positions_value_usd)
 
     # 构建多币种余额信息
     balances_by_currency = {
@@ -97,23 +158,12 @@ async def _send_snapshot(db: Session, user_id: int):
         "positions_value_by_currency": positions_value_by_currency,
         "total_assets_usd": positions_value_usd + total_cash_usd,
         "positions_value_usd": positions_value_usd,
+        "market_data": market_data_status,
     }
     await manager.send_to_user(user_id, {
         "type": "snapshot",
         "overview": overview,
-        "positions": [
-            {
-                "id": p.id,
-                "user_id": p.user_id,
-                "symbol": p.symbol,
-                "name": p.name,
-                "market": p.market,
-                "quantity": p.quantity,
-                "available_quantity": p.available_quantity,
-                "avg_cost": float(p.avg_cost),
-            }
-            for p in positions
-        ],
+        "positions": positions_with_market,
         "orders": [
             {
                 "id": o.id,
@@ -148,6 +198,7 @@ async def _send_snapshot(db: Session, user_id: int):
             }
             for t in trades
         ],
+        "market_data": market_data_status,
     })
 
 
@@ -189,7 +240,8 @@ async def websocket_endpoint(websocket: WebSocket):
                         continue
                     user = get_user(db, user_id)
                     try:
-                        order = place_and_execute(
+                        # Place order (creates PENDING order with cash freezing)
+                        order = place_order(
                             db,
                             user,
                             msg["symbol"],
@@ -200,10 +252,42 @@ async def websocket_endpoint(websocket: WebSocket):
                             msg.get("price"),
                             int(msg["quantity"]),
                         )
-                        await manager.send_to_user(user_id, {"type": "order_filled", "order_id": order.id})
+                        
+                        # Try immediate execution
+                        executed = execute_order(db, order)
+                        
+                        if executed:
+                            await manager.send_to_user(user_id, {"type": "order_filled", "order_id": order.id})
+                        else:
+                            await manager.send_to_user(user_id, {"type": "order_placed", "order_id": order.id, "status": "PENDING"})
+                        
                         await _send_snapshot(db, user_id)
                     except ValueError as e:
                         await manager.send_to_user(user_id, {"type": "error", "message": str(e)})
+                elif kind == "cancel_order":
+                    if user_id is None:
+                        await websocket.send_text(json.dumps({"type": "error", "message": "not bootstrapped"}))
+                        continue
+                    try:
+                        order_no = msg["order_no"]
+                        success = cancel_order(db, order_no, user_id)
+                        if success:
+                            await manager.send_to_user(user_id, {"type": "order_cancelled", "order_no": order_no})
+                            await _send_snapshot(db, user_id)
+                        else:
+                            await manager.send_to_user(user_id, {"type": "error", "message": "Order not found or not cancellable"})
+                    except Exception as e:
+                        await manager.send_to_user(user_id, {"type": "error", "message": str(e)})
+                elif kind == "set_xueqiu_cookie":
+                    if user_id is None:
+                        await websocket.send_text(json.dumps({"type": "error", "message": "not bootstrapped"}))
+                        continue
+                    try:
+                        cookie_input = msg.get("cookie_string", "")
+                        set_xueqiu_cookie_string(cookie_input)
+                        await manager.send_to_user(user_id, {"type": "xueqiu_cookie_updated"})
+                    except Exception:
+                        await manager.send_to_user(user_id, {"type": "error", "message": "Failed to update Snowball cookie"})
                 elif kind == "get_snapshot":
                     if user_id is not None:
                         await _send_snapshot(db, user_id)
@@ -231,6 +315,24 @@ async def websocket_endpoint(websocket: WebSocket):
                                 }
                                 for t in trades
                             ]
+                        })
+                elif kind == "get_hk_stock_info":
+                    if user_id is None:
+                        await websocket.send_text(json.dumps({"type": "error", "message": "not bootstrapped"}))
+                        continue
+                    try:
+                        symbol = msg["symbol"]
+                        stock_info = get_hk_stock_info(symbol)
+                        await manager.send_to_user(user_id, {
+                            "type": "hk_stock_info",
+                            "symbol": symbol,
+                            "info": stock_info
+                        })
+                    except Exception as e:
+                        await manager.send_to_user(user_id, {
+                            "type": "hk_stock_info_error",
+                            "symbol": msg.get("symbol"),
+                            "message": str(e)
                         })
                 elif kind == "ping":
                     await websocket.send_text(json.dumps({"type": "pong"}))

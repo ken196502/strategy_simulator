@@ -1,45 +1,162 @@
-import React, { useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useTranslation } from '@/lib/i18n'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
-
-interface CurrencyBalance {
-  current_cash: number
-  frozen_cash: number
-}
+import {
+  normalizeSymbol,
+  sanitizeSymbolInput,
+  formatSymbolForMarket,
+  formatSymbolForDisplay,
+  symbolPlaceholders,
+  marketToCurrency,
+  getCurrentBalance,
+  type MarketType,
+  type BalancesByCurrency,
+  type PendingHkRequestsMap,
+  requestHkStockInfo as requestHkStockInfoHelper,
+} from '@/lib/trading'
 
 interface TradingPanelProps {
   onPlace: (payload: any) => void
-  balances?: {
-    usd: CurrencyBalance
-    hkd: CurrencyBalance
-    cny: CurrencyBalance
-  }
+  balances?: BalancesByCurrency
+  wsRef?: React.RefObject<WebSocket | null>
 }
 
-export default function TradingPanel({ onPlace, balances }: TradingPanelProps) {
+export default function TradingPanel({ onPlace, balances, wsRef }: TradingPanelProps) {
   const { t } = useTranslation()
-  const [symbol, setSymbol] = useState('00005')
-  const [name, setName] = useState('HSBC Holdings')
-  const [market, setMarket] = useState<'US' | 'HK' | 'CN'>('HK')
+  const [symbol, setSymbol] = useState('')
+  const [market, setMarket] = useState<MarketType>('US')
   const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT'>('LIMIT')
-  const [price, setPrice] = useState<number>(2)
-  const [quantity, setQuantity] = useState<number>(2)
+  const [price, setPrice] = useState<number>(0)
+  const [quantity, setQuantity] = useState<number>(0)
+  const [hkTradeUnit, setHkTradeUnit] = useState<number>(100)
+  const [stockInfo, setStockInfo] = useState<any>(null)
+  const [isValidatingHkSymbol, setIsValidatingHkSymbol] = useState(false)
+  const [hkInfoError, setHkInfoError] = useState<string | null>(null)
+  const pendingHkRequests = useRef<PendingHkRequestsMap>(new Map())
+  const socket = wsRef?.current
 
-  // 市场到币种的映射
-  const marketToCurrency = {
-    'US': 'usd',
-    'HK': 'hkd', 
-    'CN': 'cny'
-  } as const
+  useEffect(() => {
+    const ws = socket
+    if (!ws) return
 
-  // 币种符号映射
-  const currencySymbols = {
-    'usd': '$',
-    'hkd': 'HK$',
-    'cny': '¥'
-  } as const
+    const handleMessage = (event: MessageEvent) => {
+      try {
+        const msg = JSON.parse(event.data)
+        if (msg.type === 'hk_stock_info' || msg.type === 'hk_stock_info_error') {
+          const symbolValue = msg.symbol || ''
+          const key = normalizeSymbol(symbolValue)
+          const formattedSymbol = formatSymbolForMarket(symbolValue, 'HK')
+          const fallbackKey = formattedSymbol ? normalizeSymbol(formattedSymbol) : null
+          const targetKey = pendingHkRequests.current.has(key)
+            ? key
+            : (fallbackKey && pendingHkRequests.current.has(fallbackKey) ? fallbackKey : null)
+          if (!targetKey) {
+            return
+          }
+          const pending = pendingHkRequests.current.get(targetKey)
+          if (!pending) {
+            return
+          }
+          clearTimeout(pending.timeoutId)
+          if (msg.type === 'hk_stock_info') {
+            pending.resolve.forEach((resolver) => resolver(msg.info))
+          } else {
+            pending.reject.forEach((rejecter) => rejecter(new Error(msg.message || '无法获取港股信息')))
+          }
+          pendingHkRequests.current.delete(targetKey)
+          return
+        }
+      } catch (error) {
+        // 忽略无法解析的消息
+      }
+    }
+
+    ws.addEventListener('message', handleMessage)
+    return () => {
+      ws.removeEventListener('message', handleMessage)
+      pendingHkRequests.current.forEach(({ reject, timeoutId }) => {
+        clearTimeout(timeoutId)
+        reject.forEach((rejecter) => rejecter(new Error('连接已断开')))
+      })
+      pendingHkRequests.current.clear()
+    }
+  }, [socket])
+
+  const requestHkStockInfo = (inputSymbol: string) => {
+    if (!wsRef?.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      return Promise.reject(new Error('交易连接未就绪'))
+    }
+
+    return requestHkStockInfoHelper({
+      ws: wsRef.current,
+      pendingRequests: pendingHkRequests.current,
+      inputSymbol,
+    })
+  }
+
+  const validateHkSymbol = async (inputSymbol: string) => {
+    const sanitized = sanitizeSymbolInput(inputSymbol, 'HK')
+    if (!sanitized) {
+      setHkInfoError('请输入股票代码')
+      throw new Error('请输入股票代码')
+    }
+
+    setIsValidatingHkSymbol(true)
+    setHkInfoError(null)
+    try {
+      const info = await requestHkStockInfo(sanitized)
+      const sanitizedSymbol = sanitizeSymbolInput(info?.symbol ?? sanitized, 'HK')
+      const displaySymbol = formatSymbolForDisplay(sanitizedSymbol, 'HK')
+      if (displaySymbol !== symbol) {
+        setSymbol(displaySymbol)
+      }
+      setStockInfo(info)
+      const tradeUnit = Math.max(1, Number(info?.trade_unit) || 0) || 100
+      setHkTradeUnit(tradeUnit)
+      return info
+    } catch (error: any) {
+      setStockInfo(null)
+      setHkTradeUnit(100)
+      setHkInfoError(error?.message || '获取港股信息失败')
+      throw error
+    } finally {
+      setIsValidatingHkSymbol(false)
+    }
+  }
+
+  const handleMarketChange = (newMarket: MarketType) => {
+    setMarket(newMarket)
+    setSymbol('')
+    setPrice(0)
+    setQuantity(0)
+    setStockInfo(null)
+    setHkInfoError(null)
+    setIsValidatingHkSymbol(false)
+    setHkTradeUnit(newMarket === 'HK' ? 100 : 1)
+    pendingHkRequests.current.forEach(({ reject, timeoutId }) => {
+      clearTimeout(timeoutId)
+      reject.forEach((rejecter) => rejecter(new Error('市场已切换')))
+    })
+    pendingHkRequests.current.clear()
+  }
+
+  const handleSymbolBlur = () => {
+    if (market === 'HK') {
+      const sanitized = sanitizeSymbolInput(symbol, 'HK')
+      if (!sanitized) {
+        setSymbol('')
+        setHkInfoError('请输入股票代码')
+        return
+      }
+      const displaySymbol = formatSymbolForDisplay(sanitized, 'HK')
+      if (displaySymbol !== symbol) {
+        setSymbol(displaySymbol)
+      }
+      void validateHkSymbol(sanitized)
+    }
+  }
 
   const adjustPrice = (delta: number) => {
     const newPrice = Math.max(0, price + delta)
@@ -55,50 +172,80 @@ export default function TradingPanel({ onPlace, balances }: TradingPanelProps) {
   }
 
   const adjustQuantity = (delta: number) => {
-    setQuantity(Math.max(0, quantity + delta))
+    // Adjust by lot size for each market
+    const lotSize = market === 'HK' ? Math.max(1, hkTradeUnit) : 1
+    const adjustment = delta * lotSize
+    setQuantity(Math.max(0, quantity + adjustment))
   }
 
-  // 获取当前市场对应的币种余额
-  const getCurrentBalance = () => {
-    if (!balances) return null
-    const currency = marketToCurrency[market]
-    return balances[currency]
-  }
-
-  const currentBalance = getCurrentBalance()
+  const currentBalance = getCurrentBalance(balances, market)
   const currentCurrency = marketToCurrency[market]
-  const currencySymbol = currencySymbols[currentCurrency]
+  const displayCurrency = currentCurrency.toUpperCase()
 
-  const amount = price * quantity
+  const amount = price > 0 ? price * quantity : 0
   const cashAvailable = currentBalance?.current_cash || 0
   const frozenCash = currentBalance?.frozen_cash || 0
   const positionAvailable = 0 // TODO: Calculate from position data
-  const maxBuyable = Math.floor(cashAvailable / price) || 0
+  
+  // Calculate max buyable considering lot size
+  const lotSize = market === 'HK' ? Math.max(1, hkTradeUnit) : 1
+  const maxSharesAffordable = price > 0 ? Math.floor(cashAvailable / price) : 0
+  const maxBuyable = lotSize > 0 ? Math.floor(maxSharesAffordable / lotSize) * lotSize : 0
 
-  const handleBuy = () => {
+  const submitOrder = async (side: 'BUY' | 'SELL') => {
+    const sanitizedSymbol = sanitizeSymbolInput(symbol, market)
+
+    if (!sanitizedSymbol) {
+      if (market === 'HK') {
+        setHkInfoError('请输入股票代码')
+      }
+      return
+    }
+
+    if (quantity <= 0) {
+      return
+    }
+
+    if (orderType === 'LIMIT' && price <= 0) {
+      return
+    }
+
+    let displaySymbol = formatSymbolForDisplay(sanitizedSymbol, market)
+    let formattedSymbol = formatSymbolForMarket(sanitizedSymbol, market)
+
+    if (market === 'HK') {
+      try {
+        const info = await validateHkSymbol(sanitizedSymbol)
+        const infoSymbol = info?.symbol ?? sanitizedSymbol
+        const infoSanitized = sanitizeSymbolInput(infoSymbol, 'HK') || sanitizedSymbol
+        displaySymbol = formatSymbolForDisplay(infoSanitized, 'HK')
+        formattedSymbol = formatSymbolForMarket(infoSanitized, 'HK')
+      } catch {
+        return
+      }
+    }
+
+    if (displaySymbol !== symbol) {
+      setSymbol(displaySymbol)
+    }
+
     onPlace({
-      symbol,
-      name,
+      symbol: formattedSymbol,
       market,
-      side: 'BUY',
+      side,
       order_type: orderType,
       price: orderType === 'LIMIT' ? price : undefined,
       quantity,
-      currency: currentCurrency
+      currency: currentCurrency,
     })
   }
 
+  const handleBuy = () => {
+    void submitOrder('BUY')
+  }
+
   const handleSell = () => {
-    onPlace({
-      symbol,
-      name,
-      market,
-      side: 'SELL',
-      order_type: orderType,
-      price: orderType === 'LIMIT' ? price : undefined,
-      quantity,
-      currency: currentCurrency
-    })
+    void submitOrder('SELL')
   }
 
   return (
@@ -106,28 +253,61 @@ export default function TradingPanel({ onPlace, balances }: TradingPanelProps) {
       {/* 市场选择 */}
       <div className="space-y-2">
         <label className="text-xs">Market</label>
-        <Select value={market} onValueChange={(v) => setMarket(v as 'US' | 'HK' | 'CN')}>
+        <Select value={market} onValueChange={(value) => handleMarketChange(value as MarketType)}>
           <SelectTrigger className="text-xs h-8">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="US">{t('trading.us')} ({currencySymbols.usd})</SelectItem>
-            <SelectItem value="HK">{t('trading.hk')} ({currencySymbols.hkd})</SelectItem>
-            <SelectItem value="CN">{t('trading.cn')} ({currencySymbols.cny})</SelectItem>
+            <SelectItem value="US">{t('trading.us')} ({marketToCurrency.US.toUpperCase()})</SelectItem>
+            <SelectItem value="HK">{t('trading.hk')} ({marketToCurrency.HK.toUpperCase()})</SelectItem>
+            <SelectItem value="CN">{t('trading.cn')} ({marketToCurrency.CN.toUpperCase()})</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
-      {/* 代码 */}
+      {/* 股票选择 */}
       <div className="space-y-2">
-        <label className="text-xs">Code</label>
-        <div className="relative">
-          <Input 
+        <label className="text-xs">Symbol</label>
+        <div className="flex gap-2">
+          <Input
             value={symbol}
-            onChange={(e) => setSymbol(e.target.value)}
+            onChange={(e) => {
+              const sanitizedValue = sanitizeSymbolInput(e.target.value, market)
+              setSymbol(sanitizedValue)
+              if (market === 'HK') {
+                setHkInfoError(null)
+              }
+            }}
+            onBlur={handleSymbolBlur}
+            placeholder={symbolPlaceholders[market]}
+            className="text-xs"
           />
+          {market === 'HK' && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (symbol.trim()) {
+                  void validateHkSymbol(symbol.trim())
+                } else {
+                  setHkInfoError('请输入股票代码')
+                }
+              }}
+              disabled={isValidatingHkSymbol || !wsRef?.current}
+            >
+              {isValidatingHkSymbol ? '检查中' : '检查'}
+            </Button>
+          )}
         </div>
-        <div className="text-xs text-muted-foreground">{name}</div>
+        {market === 'HK' && stockInfo && (
+          <div className="text-xs text-muted-foreground">
+            {stockInfo.name ? `${stockInfo.name} · 每手 ${hkTradeUnit} 股` : `每手 ${hkTradeUnit} 股`}
+          </div>
+        )}
+        {market === 'HK' && hkInfoError && (
+          <div className="text-xs text-red-500">{hkInfoError}</div>
+        )}
       </div>
 
       {/* 订单类型 */}
@@ -180,7 +360,14 @@ export default function TradingPanel({ onPlace, balances }: TradingPanelProps) {
 
       {/* 数量 */}
       <div className="space-y-2">
-        <label className="text-xs">Quantity</label>
+        <div className="flex items-center justify-between">
+          <label className="text-xs">Quantity</label>
+          {market === 'HK' && (
+            <span className="text-xs text-muted-foreground">
+              每手 {Math.max(1, hkTradeUnit)} 股{stockInfo?.name ? ` · ${stockInfo.name}` : ''}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           <Button 
             onClick={() => adjustQuantity(-1)}
@@ -192,7 +379,17 @@ export default function TradingPanel({ onPlace, balances }: TradingPanelProps) {
             <Input 
               inputMode="numeric"
               value={quantity}
-              onChange={(e) => setQuantity(parseInt(e.target.value) || 0)}
+              onChange={(e) => {
+                const inputValue = parseInt(e.target.value, 10) || 0
+                // For HK market, round to nearest lot size
+                if (market === 'HK') {
+                  const lot = Math.max(1, hkTradeUnit)
+                  const roundedValue = Math.round(inputValue / lot) * lot
+                  setQuantity(Math.max(0, roundedValue))
+                } else {
+                  setQuantity(Math.max(0, inputValue))
+                }
+              }}
               className="text-center"
             />
           </div>
@@ -209,15 +406,15 @@ export default function TradingPanel({ onPlace, balances }: TradingPanelProps) {
       <div className="space-y-3 pt-4">
         <div className="flex justify-between">
           <span className="text-xs">{t('trading.amount')}</span>
-          <span className="text-xs">{currencySymbol}{amount.toFixed(2)}</span>
+          <span className="text-xs">{`${displayCurrency} ${amount.toFixed(2)}`}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-xs">{t('trading.availableCash')}</span>
-          <span className="text-xs text-[#16BA71]">{currencySymbol}{cashAvailable.toFixed(2)}</span>
+          <span className="text-xs text-[#16BA71]">{`${displayCurrency} ${cashAvailable.toFixed(2)}`}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-xs">{t('trading.frozenCash')}</span>
-          <span className="text-xs text-orange-500">{currencySymbol}{frozenCash.toFixed(2)}</span>
+          <span className="text-xs text-orange-500">{`${displayCurrency} ${frozenCash.toFixed(2)}`}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-xs">{t('trading.sellablePosition')}</span>

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from database.connection import engine, Base, SessionLocal
 from database.models import TradingConfig, User
 from config.settings import DEFAULT_TRADING_CONFIGS
+from services.order_monitor import start_order_monitor, stop_order_monitor
 app = FastAPI(title="Simulated US/HK Trading API")
 
 app.add_middleware(
@@ -59,8 +60,21 @@ def on_startup():
             db.commit()
     finally:
         db.close()
+    
+    # Start order monitor for background order processing
+    start_order_monitor(check_interval=5.0)
+
+
+@app.on_event("shutdown")
+def on_shutdown():
+    # Stop order monitor on application shutdown
+    stop_order_monitor()
 
 
 # WS-only runtime (HTTP routers not registered)
 from api.ws import websocket_endpoint
 app.add_api_websocket_route("/ws", websocket_endpoint)
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=2314)

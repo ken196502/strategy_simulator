@@ -59,7 +59,7 @@ export default function MultiCurrencyBalance({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-2">
       {/* 总览卡片 */}
       <div className="grid grid-cols-2 gap-4">
         <Card className="p-4">
