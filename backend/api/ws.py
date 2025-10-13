@@ -14,6 +14,7 @@ from services.order_service import place_order, execute_order, cancel_order
 from services.hk_stock_info import get_hk_stock_info
 from services.xueqiu import XueqiuMarketDataError, set_xueqiu_cookie_string
 from database.models import Trade
+from services.asset_snapshot_service import generate_daily_snapshot
 
 
 class ConnectionManager:
@@ -68,7 +69,7 @@ async def _send_snapshot(db: Session, user_id: int):
         last_price_value: Decimal | None = None
         market_value = Decimal("0")
         try:
-            last_price_value = Decimal(str(get_last_price(p.symbol, p.market)))
+            last_price_value = Decimal(str(get_last_price(p.symbol, p.market, db=db)))
             market_value = last_price_value * Decimal(p.quantity)
         except XueqiuMarketDataError as exc:
             market_error = exc
@@ -160,6 +161,8 @@ async def _send_snapshot(db: Session, user_id: int):
         "positions_value_usd": positions_value_usd,
         "market_data": market_data_status,
     }
+    generate_daily_snapshot(db, user_id)
+
     await manager.send_to_user(user_id, {
         "type": "snapshot",
         "overview": overview,

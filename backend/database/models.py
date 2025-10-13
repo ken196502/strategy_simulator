@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DECIMAL, TIMESTAMP, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DECIMAL, TIMESTAMP, DATE, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -34,6 +34,7 @@ class User(Base):
 
     positions = relationship("Position", back_populates="user")
     orders = relationship("Order", back_populates="user")
+    asset_snapshots = relationship("DailyAssetSnapshot", back_populates="user")
 
 
 class Position(Base):
@@ -131,4 +132,49 @@ class ExchangeRate(Base):
     # 添加唯一约束，确保每对货币只有一个汇率记录
     __table_args__ = (
         UniqueConstraint('from_currency', 'to_currency', name='_currency_pair_uc'),
+    )
+
+
+class DailyStockPrice(Base):
+    __tablename__ = "daily_stock_prices"
+
+    id = Column(Integer, primary_key=True, index=True)
+    version = Column(String(100), nullable=False, default="v1")
+    symbol = Column(String(20), nullable=False)
+    market = Column(String(10), nullable=False)
+    price_date = Column(DATE, nullable=False)
+    price = Column(DECIMAL(18, 6), nullable=False)
+    created_at = Column(TIMESTAMP, server_default=func.current_timestamp())
+    updated_at = Column(
+        TIMESTAMP, server_default=func.current_timestamp(), onupdate=func.current_timestamp()
+    )
+
+    __table_args__ = (
+        UniqueConstraint('symbol', 'market', 'price_date', name='_symbol_market_date_uc'),
+    )
+
+
+class DailyAssetSnapshot(Base):
+    __tablename__ = "daily_asset_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    version = Column(String(100), nullable=False, default="v1")
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    snapshot_date = Column(DATE, nullable=False)
+    cash_usd = Column(DECIMAL(18, 2), nullable=False, default=0)
+    cash_hkd = Column(DECIMAL(18, 2), nullable=False, default=0)
+    cash_cny = Column(DECIMAL(18, 2), nullable=False, default=0)
+    positions_usd = Column(DECIMAL(18, 2), nullable=False, default=0)
+    positions_hkd = Column(DECIMAL(18, 2), nullable=False, default=0)
+    positions_cny = Column(DECIMAL(18, 2), nullable=False, default=0)
+    total_assets_usd = Column(DECIMAL(18, 2), nullable=False, default=0)
+    created_at = Column(TIMESTAMP, server_default=func.current_timestamp())
+    updated_at = Column(
+        TIMESTAMP, server_default=func.current_timestamp(), onupdate=func.current_timestamp()
+    )
+
+    user = relationship("User", back_populates="asset_snapshots")
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'snapshot_date', name='_user_snapshot_uc'),
     )

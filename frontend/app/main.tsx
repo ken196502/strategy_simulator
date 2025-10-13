@@ -1,60 +1,23 @@
 import React, { useEffect, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import './index.css'
-import { LanguageProvider, useTranslation } from '@/lib/i18n'
+import { LanguageProvider } from '@/lib/i18n'
 import Header from '@/components/layout/Header'
 
 // Create a module-level WebSocket singleton to avoid duplicate connections in React StrictMode
 let __WS_SINGLETON__: WebSocket | null = null;
 
 import Sidebar from '@/components/layout/Sidebar'
-import TradingPanel from '@/components/trading/TradingPanel'
-import MultiCurrencyBalance from '@/components/portfolio/MultiCurrencyBalance'
-import PositionsOrdersTrades, { Position, Order, Trade } from '@/components/trading/PositionsOrdersTrades'
-
-interface CurrencyBalance {
-  initial_capital: number
-  current_cash: number
-  frozen_cash: number
-}
-
-interface User {
-  id: number
-  username: string
-  initial_capital_usd: number
-  current_cash_usd: number
-  frozen_cash_usd: number
-  initial_capital_hkd: number
-  current_cash_hkd: number
-  frozen_cash_hkd: number
-  initial_capital_cny: number
-  current_cash_cny: number
-  frozen_cash_cny: number
-}
-
-interface MarketDataStatus {
-  status: 'ok' | 'error'
-  code?: string
-  message?: string
-}
-
-interface Overview { 
-  user: User
-  balances_by_currency: {
-    usd: CurrencyBalance
-    hkd: CurrencyBalance
-    cny: CurrencyBalance
-  }
-  total_assets_usd: number
-  positions_value_usd: number
-  positions_value_by_currency: { usd: number; hkd: number; cny: number }
-  market_data?: MarketDataStatus
-}
+import type { Position, Order, Trade } from '@/components/trading/PositionsOrdersTrades'
+import TradingDashboard from '@/pages/TradingDashboard'
+import AssetTrend from '@/pages/AssetTrend'
+import Documentation from '@/pages/Documentation'
+import type { Overview } from '@/types/overview'
 function App() {
-  const { t } = useTranslation()
   const [userId, setUserId] = useState<number | null>(null)
   const [overview, setOverview] = useState<Overview | null>(null)
   const [positions, setPositions] = useState<Position[]>([])
@@ -129,7 +92,13 @@ function App() {
     </Dialog>
   )
 
+  // Only establish WebSocket connection if not on documentation page
   useEffect(() => {
+    // Skip WebSocket connection on documentation page
+    if ((window as any).isDocumentationPage) {
+      return
+    }
+
     let ws = __WS_SINGLETON__
     const created = !ws || ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED
     if (created) {
@@ -215,10 +184,12 @@ function App() {
     }
   }, [])
 
+  // Only set up the snapshot refresh interval if we have a user ID and we're not on the documentation page
   useEffect(() => {
-    if (!userId) {
+    if (!userId || (window as any).isDocumentationPage) {
       return
     }
+    
     const intervalId = setInterval(() => {
       const ws = wsRef.current
       if (ws && ws.readyState === WebSocket.OPEN) {
@@ -259,39 +230,37 @@ function App() {
       <div className="h-screen flex overflow-hidden">
         <Sidebar wsRef={wsRef} />
         <div className="flex-1 flex flex-col">
-         <Header />
-         <main className="flex-1 p-2 overflow-hidden">
-          <div className="mb-2">
-            <MultiCurrencyBalance 
-              balances={overview.balances_by_currency}
-              totalAssetsUsd={overview.total_assets_usd}
-              positionsValueUsd={overview.positions_value_usd}
-              positionsValueByCurrency={overview.positions_value_by_currency}
-            />
-          </div>
-          <div className="flex gap-2 h-[calc(100vh-400px)]">
-            {/* Trading Panel - Left Side */}
-            <div className="flex-shrink-0">
-              <TradingPanel 
-                onPlace={placeOrder}
-                balances={overview.balances_by_currency}
-                wsRef={wsRef}
+          <Header />
+          <main className="flex-1 p-2 overflow-hidden">
+            <Routes>
+              <Route path="/" element={<Navigate to="/documentation" replace />} />
+              <Route
+                path="/trading"
+                element={
+                  <TradingDashboard
+                    overview={overview}
+                    positions={positions}
+                    orders={orders}
+                    trades={trades}
+                    onPlaceOrder={placeOrder}
+                    onCancelOrder={cancelOrder}
+                    wsRef={wsRef}
+                  />
+                }
               />
-            </div>
-
-            {/* Tabbed Content - Right Side */}
-            <div className="flex-1 overflow-hidden">
-              <PositionsOrdersTrades
-                positions={positions}
-                orders={orders}
-                trades={trades}
-                onCancel={cancelOrder}
+              <Route
+                path="/asset-trend"
+                element={<AssetTrend userId={userId} />}
               />
-            </div>
-          </div>
-        </main>
+              <Route
+                path="/documentation"
+                element={<Documentation />}
+              />
+              <Route path="*" element={<Navigate to="/documentation" replace />} />
+            </Routes>
+          </main>
+        </div>
       </div>
-    </div>
       {cookieDialog}
     </>
   )
@@ -300,7 +269,9 @@ function App() {
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <LanguageProvider>
-      <App />
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
     </LanguageProvider>
   </React.StrictMode>,
 )

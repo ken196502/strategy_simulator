@@ -18,6 +18,7 @@ const dictionaries: Record<Language, Record<string, string>> = {
 
     'sidebar.portfolio': 'Portfolio',
     'sidebar.trading': 'Trading',
+    'sidebar.assetTrend': 'Asset Trend',
 
     'tabs.positions': 'Positions',
     'tabs.orders': 'Orders',
@@ -46,6 +47,20 @@ const dictionaries: Record<Language, Record<string, string>> = {
     'trading.shares': 'shares',
     'trading.buy': 'Buy',
     'trading.sell': 'Sell',
+
+    'assetTrend.initialLabel': 'Initial',
+    'assetTrend.initialCapital': 'Initial Capital (USD)',
+    'assetTrend.noTrades': 'No trades yet. Showing initial capital.',
+    'assetTrend.missingRates': 'Missing exchange rates for',
+    'assetTrend.chartTitle': 'Asset Trend',
+    'assetTrend.tableTitle': 'Daily Asset Summary',
+    'assetTrend.date': 'Date',
+    'assetTrend.dailyChange': 'Daily Change (USD)',
+    'assetTrend.cash': 'Cash (USD)',
+    'assetTrend.positions': 'Positions Value (USD)',
+    'assetTrend.total': 'Total Assets (USD)',
+    'assetTrend.cumulativeChange': 'Cumulative Change (USD)',
+    'assetTrend.loading': 'Loading asset trend...',
   },
   cn: {
     'header.title': '美股/港股 模拟交易',
@@ -54,6 +69,7 @@ const dictionaries: Record<Language, Record<string, string>> = {
 
     'sidebar.portfolio': '资产',
     'sidebar.trading': '交易',
+    'sidebar.assetTrend': '资产曲线',
 
     'tabs.positions': '持仓',
     'tabs.orders': '委托',
@@ -82,6 +98,20 @@ const dictionaries: Record<Language, Record<string, string>> = {
     'trading.shares': '股',
     'trading.buy': '买入',
     'trading.sell': '卖出',
+
+    'assetTrend.initialLabel': '初始',
+    'assetTrend.initialCapital': '初始资金 (USD)',
+    'assetTrend.noTrades': '暂无成交，仅展示初始资金。',
+    'assetTrend.missingRates': '缺少汇率数据',
+    'assetTrend.chartTitle': '每日资产曲线',
+    'assetTrend.tableTitle': '每日资产汇总',
+    'assetTrend.date': '日期',
+    'assetTrend.dailyChange': '当日变动 (USD)',
+    'assetTrend.cash': '现金 (USD)',
+    'assetTrend.positions': '持仓市值 (USD)',
+    'assetTrend.total': '当日资产 (USD)',
+    'assetTrend.cumulativeChange': '累计变动 (USD)',
+    'assetTrend.loading': '资产曲线加载中...',
   },
 }
 

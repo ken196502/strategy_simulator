@@ -1,5 +1,6 @@
 import { useState, type RefObject } from 'react'
-import { PieChart, ArrowLeftRight, Settings } from 'lucide-react'
+import { PieChart, ArrowLeftRight, Settings, BookOpen } from 'lucide-react'
+import { NavLink } from 'react-router-dom'
 import { useTranslation } from '@/lib/i18n'
 import { Button } from '@/components/ui/button'
 import {
@@ -47,23 +48,37 @@ export default function Sidebar({ wsRef }: SidebarProps) {
   }
 
   const toggle = () => setLang(lang === 'en' ? 'cn' : 'en')
+  const navClass = ({ isActive }: { isActive: boolean }) => (
+    `flex items-center justify-center w-10 h-10 rounded-lg transition-colors ${
+      isActive ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
+    }`
+  )
+
   return (
     <aside className="w-16 border-r h-full p-2 flex flex-col items-center">
       <nav className="space-y-4">
-        <a 
-          className="flex items-center justify-center w-10 h-10 rounded-lg hover:bg-gray-100 transition-colors" 
-          href="#portfolio"
-          title={t('sidebar.portfolio')}
+        <NavLink
+          to="/documentation"
+          className={navClass}
+          title={t('sidebar.documentation') || 'Documentation'}
+          end
         >
-          <PieChart className="w-5 h-5 text-gray-600" />
-        </a>
-        <a 
-          className="flex items-center justify-center w-10 h-10 rounded-lg hover:bg-gray-100 transition-colors" 
-          href="#trading"
+          <BookOpen className="w-5 h-5" />
+        </NavLink>
+        <NavLink
+          to="/trading"
+          className={navClass}
           title={t('sidebar.trading')}
         >
-          <ArrowLeftRight className="w-5 h-5 text-gray-600" />
-        </a>
+          <ArrowLeftRight className="w-5 h-5" />
+        </NavLink>
+        <NavLink
+          to="/asset-trend"
+          className={navClass}
+          title={t('sidebar.assetTrend')}
+        >
+          <PieChart className="w-5 h-5" />
+        </NavLink>
       </nav>
       <Dialog open={settingsOpen} onOpenChange={handleOpenChange}>
         <DialogTrigger asChild>
