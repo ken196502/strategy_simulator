@@ -4,11 +4,11 @@
   "scripts": {
     "dev": "concurrently \"pnpm run dev:backend\" \"pnpm run dev:frontend\"",
     "dev:frontend": "cd frontend && pnpm dev",
-    "dev:backend": "cd backend && uv sync --quiet && uv run uvicorn main:app --reload --port 2314 --host 0.0.0.0",
+    "dev:backend": "cd hono-backend && HONO_PORT=2314 pnpm dev",
     "build": "pnpm run build:frontend && pnpm run build:backend",
     "build:frontend": "cd frontend && pnpm build",
-    "build:backend": "cd backend && echo \"Backend build step not yet implemented\"",
-    "install:all": "pnpm install && cd backend && uv sync --quiet"
+    "build:backend": "cd hono-backend && pnpm build",
+    "install:all": "pnpm install && cd hono-backend && pnpm install"
   },
   "devDependencies": {
     "concurrently": "^8.2.0"

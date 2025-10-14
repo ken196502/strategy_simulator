@@ -1,4 +1,4 @@
-import { useState, type RefObject } from 'react'
+import { useState, useEffect } from 'react'
 import { PieChart, ArrowLeftRight, Settings, BookOpen } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import { useTranslation } from '@/lib/i18n'
@@ -13,16 +13,41 @@ import {
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog'
+import tradingApi from '@/lib/api'
+// Constants for localStorage keys
+const XUEQIU_COOKIE_KEY = 'xueqiu_cookie_string'
 
-interface SidebarProps {
-  wsRef?: RefObject<WebSocket | null>
-}
-
-export default function Sidebar({ wsRef }: SidebarProps) {
+export default function Sidebar() {
   const { t, lang, setLang } = useTranslation()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [cookieString, setCookieString] = useState('')
+  const [savedCookieString, setSavedCookieString] = useState('')
   const [error, setError] = useState<string | null>(null)
+
+  // Load saved cookie string from localStorage on component mount
+  useEffect(() => {
+    const savedCookie = localStorage.getItem(XUEQIU_COOKIE_KEY)
+    if (savedCookie) {
+      setSavedCookieString(savedCookie)
+      // Automatically send saved cookie to backend on app start
+      if (tradingApi.isSocketOpen()) {
+        tradingApi.setXueqiuCookie(savedCookie)
+      } else {
+        // If socket is not open yet, set it when it opens
+        const unsubscribe = tradingApi.onOpen(() => {
+          tradingApi.setXueqiuCookie(savedCookie)
+          unsubscribe()
+        })
+      }
+    }
+  }, [])
+
+  // Load saved cookie into form when opening settings dialog
+  useEffect(() => {
+    if (settingsOpen && savedCookieString) {
+      setCookieString(savedCookieString)
+    }
+  }, [settingsOpen, savedCookieString])
 
   const handleOpenChange = (open: boolean) => {
     setSettingsOpen(open)
@@ -33,16 +58,38 @@ export default function Sidebar({ wsRef }: SidebarProps) {
   }
 
   const handleSaveCookie = () => {
-    if (!wsRef?.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      setError('WebSocket connection is not available. Please reconnect and try again.')
+    const trimmedCookie = cookieString.trim()
+    
+    if (!tradingApi.isSocketOpen()) {
+      setError('交易连接未就绪')
       return
     }
 
-    wsRef.current.send(
-      JSON.stringify({ type: 'set_xueqiu_cookie', cookie_string: cookieString.trim() })
-    )
+    // Save to localStorage (even if empty to clear)
+    if (trimmedCookie) {
+      localStorage.setItem(XUEQIU_COOKIE_KEY, trimmedCookie)
+      setSavedCookieString(trimmedCookie)
+    } else {
+      localStorage.removeItem(XUEQIU_COOKIE_KEY)
+      setSavedCookieString('')
+    }
 
+    // Send to backend
+    tradingApi.setXueqiuCookie(trimmedCookie)
     setCookieString('')
+    setError(null)
+    setSettingsOpen(false)
+  }
+
+  const handleClearCookie = () => {
+    setCookieString('')
+    localStorage.removeItem(XUEQIU_COOKIE_KEY)
+    setSavedCookieString('')
+    
+    if (tradingApi.isSocketOpen()) {
+      tradingApi.setXueqiuCookie('')
+    }
+    
     setError(null)
     setSettingsOpen(false)
   }
@@ -92,31 +139,51 @@ export default function Sidebar({ wsRef }: SidebarProps) {
         </DialogTrigger>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Snowball Cookie</DialogTitle>
+            <DialogTitle>Snowball Cookie Settings</DialogTitle>
             <DialogDescription>
-              Paste the exported cookie string from Snowball. Leave empty to clear the current value.
+              Configure your Snowball cookie string for market data access. The cookie will be saved in your browser and automatically restored on app startup.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Cookie String
-            </label>
-            <textarea
-              className="h-32 w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              value={cookieString}
-              onChange={(e) => setCookieString(e.target.value)}
-              placeholder="acw_tc=...; xq_a_token=..."
-            />
-            {error && <p className="text-xs text-red-500">{error}</p>}
+          <div className="space-y-4">
+            {savedCookieString && (
+              <div className="p-3 bg-green-50 border border-green-200 rounded-md">
+                <p className="text-sm text-green-800 font-medium">✓ Cookie Configured</p>
+                <p className="text-xs text-green-600 mt-1">
+                  Cookie saved: {savedCookieString.substring(0, 50)}...
+                </p>
+              </div>
+            )}
+            
+            <div className="space-y-2">
+              <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Cookie String
+              </label>
+              <textarea
+                className="h-32 w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={cookieString}
+                onChange={(e) => setCookieString(e.target.value)}
+                placeholder="acw_tc=...; xq_a_token=..."
+              />
+              {error && <p className="text-xs text-red-500">{error}</p>}
+            </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="gap-2">
             <DialogClose asChild>
               <Button variant="outline" type="button">
                 Cancel
               </Button>
             </DialogClose>
+            {savedCookieString && (
+              <Button 
+                variant="destructive" 
+                type="button" 
+                onClick={handleClearCookie}
+              >
+                Clear Cookie
+              </Button>
+            )}
             <Button type="button" onClick={handleSaveCookie}>
-              Save
+              Save Cookie
             </Button>
           </DialogFooter>
         </DialogContent>

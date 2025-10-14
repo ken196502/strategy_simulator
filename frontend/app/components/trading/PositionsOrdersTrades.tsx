@@ -6,15 +6,16 @@ import { useTranslation } from '@/lib/i18n'
 
 export interface Position {
   id: number
-  user_id: number
   symbol: string
-  name: string
   market: string
   quantity: number
-  available_quantity: number
   avg_cost: number
-  last_price?: number | null
-  market_value?: number
+  current_price: number
+  market_value: number
+  pnl: number
+  pnl_percent: number
+  created_at: string
+  updated_at: string
 }
 
 export interface Order {
@@ -54,7 +55,8 @@ interface PositionsOrdersTradesProps {
 }
 
 const getStatusBadge = (status: string) => {
-  switch (status) {
+  const upperStatus = status.toUpperCase()
+  switch (upperStatus) {
     case 'PENDING':
       return <span className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded">⏳ PENDING</span>
     case 'FILLED':
@@ -67,7 +69,8 @@ const getStatusBadge = (status: string) => {
 }
 
 const getSideBadge = (side: string) => {
-  return side === 'BUY'
+  const upperSide = side.toUpperCase()
+  return upperSide === 'BUY'
     ? <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded font-medium">BUY</span>
     : <span className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded font-medium">SELL</span>
 }
@@ -100,7 +103,7 @@ const OrderBook: React.FC<{ orders: Order[]; onCancel: (orderNo: string) => void
             <TableCell>{o.filled_quantity}</TableCell>
             <TableCell>{getStatusBadge(o.status)}</TableCell>
             <TableCell>
-              {o.status === 'PENDING' && (
+              {o.status.toUpperCase() === 'PENDING' && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -129,28 +132,37 @@ const PositionList: React.FC<{ positions: Position[] }> = ({ positions }) => (
       <TableHeader>
         <TableRow>
           <TableHead>Symbol</TableHead>
-          <TableHead>Name</TableHead>
           <TableHead>Qty</TableHead>
-          <TableHead>Available</TableHead>
           <TableHead>Avg Cost</TableHead>
           <TableHead>Last Price</TableHead>
           <TableHead>Market Value</TableHead>
+          <TableHead>P&L</TableHead>
+          <TableHead>P&L %</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {positions.map((p) => (
           <TableRow key={p.id}>
-            <TableCell>{p.symbol}.{p.market}</TableCell>
-            <TableCell>{p.name}</TableCell>
+            <TableCell className="font-medium">{p.symbol}</TableCell>
             <TableCell>{p.quantity}</TableCell>
-            <TableCell>{p.available_quantity}</TableCell>
             <TableCell>{p.avg_cost.toFixed(4)}</TableCell>
-            <TableCell>{p.last_price != null ? p.last_price.toFixed(4) : '-'}</TableCell>
-            <TableCell>{p.market_value != null ? p.market_value.toFixed(2) : '-'}</TableCell>
+            <TableCell className="font-medium">{p.current_price.toFixed(4)}</TableCell>
+            <TableCell>{p.market_value.toFixed(2)}</TableCell>
+            <TableCell className={p.pnl >= 0 ? 'text-green-600' : 'text-red-600'}>
+              {p.pnl >= 0 ? '+' : ''}{p.pnl.toFixed(2)}
+            </TableCell>
+            <TableCell className={p.pnl_percent >= 0 ? 'text-green-600' : 'text-red-600'}>
+              {p.pnl_percent >= 0 ? '+' : ''}{p.pnl_percent.toFixed(2)}%
+            </TableCell>
           </TableRow>
         ))}
       </TableBody>
     </Table>
+    {positions.length === 0 && (
+      <div className="text-center py-8 text-gray-500">
+        No positions yet. Buy some stocks to start trading.
+      </div>
+    )}
   </div>
 )
 
@@ -176,10 +188,10 @@ const TradeHistory: React.FC<{ trades: Trade[] }> = ({ trades }) => (
             <TableCell>{t.order_id}</TableCell>
             <TableCell>{t.symbol}.{t.market}</TableCell>
             <TableCell>{t.side}</TableCell>
-            <TableCell>{t.price.toFixed(4)}</TableCell>
+            <TableCell>{t.price != null ? t.price.toFixed(4) : '-'}</TableCell>
             <TableCell>{t.quantity}</TableCell>
-            <TableCell>{t.commission.toFixed(4)}</TableCell>
-            <TableCell>{t.exchange_rate.toFixed(4)}</TableCell>
+            <TableCell>{t.commission != null ? t.commission.toFixed(4) : '-'}</TableCell>
+            <TableCell>{t.exchange_rate != null ? t.exchange_rate.toFixed(4) : '-'}</TableCell>
           </TableRow>
         ))}
       </TableBody>

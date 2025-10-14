@@ -304,3 +304,4 @@ cython_debug/
 # *.csv
 backend/static/
 backend/data.db
+hono-backend/tests/

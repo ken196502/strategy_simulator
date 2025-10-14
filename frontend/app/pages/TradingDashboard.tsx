@@ -1,4 +1,3 @@
-import type { RefObject } from 'react'
 import MultiCurrencyBalance from '@/components/portfolio/MultiCurrencyBalance'
 import TradingPanel from '@/components/trading/TradingPanel'
 import PositionsOrdersTrades, { type Order, type Position, type Trade } from '@/components/trading/PositionsOrdersTrades'
@@ -11,7 +10,6 @@ interface TradingDashboardProps {
   trades: Trade[]
   onPlaceOrder: (payload: any) => void
   onCancelOrder: (orderNo: string) => void
-  wsRef: RefObject<WebSocket | null>
 }
 
 export default function TradingDashboard({
@@ -21,7 +19,6 @@ export default function TradingDashboard({
   trades,
   onPlaceOrder,
   onCancelOrder,
-  wsRef,
 }: TradingDashboardProps) {
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -35,7 +32,7 @@ export default function TradingDashboard({
       </div>
       <div className="flex gap-2 flex-1">
         <div className="flex-shrink-0">
-          <TradingPanel onPlace={onPlaceOrder} balances={overview.balances_by_currency} wsRef={wsRef} />
+          <TradingPanel onPlace={onPlaceOrder} balances={overview.balances_by_currency} />
         </div>
         <div className="flex-1 overflow-hidden">
           <PositionsOrdersTrades positions={positions} orders={orders} trades={trades} onCancel={onCancelOrder} />

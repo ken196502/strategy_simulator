@@ -1,10 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useState } from 'react'
 import { useTranslation } from '@/lib/i18n'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import {
-  normalizeSymbol,
   sanitizeSymbolInput,
   formatSymbolForMarket,
   formatSymbolForDisplay,
@@ -13,17 +12,15 @@ import {
   getCurrentBalance,
   type MarketType,
   type BalancesByCurrency,
-  type PendingHkRequestsMap,
-  requestHkStockInfo as requestHkStockInfoHelper,
 } from '@/lib/trading'
+import tradingApi from '@/lib/api'
 
 interface TradingPanelProps {
   onPlace: (payload: any) => void
   balances?: BalancesByCurrency
-  wsRef?: React.RefObject<WebSocket | null>
 }
 
-export default function TradingPanel({ onPlace, balances, wsRef }: TradingPanelProps) {
+export default function TradingPanel({ onPlace, balances }: TradingPanelProps) {
   const { t } = useTranslation()
   const [symbol, setSymbol] = useState('')
   const [market, setMarket] = useState<MarketType>('US')
@@ -34,97 +31,6 @@ export default function TradingPanel({ onPlace, balances, wsRef }: TradingPanelP
   const [stockInfo, setStockInfo] = useState<any>(null)
   const [isValidatingHkSymbol, setIsValidatingHkSymbol] = useState(false)
   const [hkInfoError, setHkInfoError] = useState<string | null>(null)
-  const pendingHkRequests = useRef<PendingHkRequestsMap>(new Map())
-  const socket = wsRef?.current
-
-  useEffect(() => {
-    const ws = socket
-    if (!ws) return
-
-    const handleMessage = (event: MessageEvent) => {
-      try {
-        const msg = JSON.parse(event.data)
-        if (msg.type === 'hk_stock_info' || msg.type === 'hk_stock_info_error') {
-          const symbolValue = msg.symbol || ''
-          const key = normalizeSymbol(symbolValue)
-          const formattedSymbol = formatSymbolForMarket(symbolValue, 'HK')
-          const fallbackKey = formattedSymbol ? normalizeSymbol(formattedSymbol) : null
-          const targetKey = pendingHkRequests.current.has(key)
-            ? key
-            : (fallbackKey && pendingHkRequests.current.has(fallbackKey) ? fallbackKey : null)
-          if (!targetKey) {
-            return
-          }
-          const pending = pendingHkRequests.current.get(targetKey)
-          if (!pending) {
-            return
-          }
-          clearTimeout(pending.timeoutId)
-          if (msg.type === 'hk_stock_info') {
-            pending.resolve.forEach((resolver) => resolver(msg.info))
-          } else {
-            pending.reject.forEach((rejecter) => rejecter(new Error(msg.message || '无法获取港股信息')))
-          }
-          pendingHkRequests.current.delete(targetKey)
-          return
-        }
-      } catch (error) {
-        // 忽略无法解析的消息
-      }
-    }
-
-    ws.addEventListener('message', handleMessage)
-    return () => {
-      ws.removeEventListener('message', handleMessage)
-      pendingHkRequests.current.forEach(({ reject, timeoutId }) => {
-        clearTimeout(timeoutId)
-        reject.forEach((rejecter) => rejecter(new Error('连接已断开')))
-      })
-      pendingHkRequests.current.clear()
-    }
-  }, [socket])
-
-  const requestHkStockInfo = (inputSymbol: string) => {
-    if (!wsRef?.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      return Promise.reject(new Error('交易连接未就绪'))
-    }
-
-    return requestHkStockInfoHelper({
-      ws: wsRef.current,
-      pendingRequests: pendingHkRequests.current,
-      inputSymbol,
-    })
-  }
-
-  const validateHkSymbol = async (inputSymbol: string) => {
-    const sanitized = sanitizeSymbolInput(inputSymbol, 'HK')
-    if (!sanitized) {
-      setHkInfoError('请输入股票代码')
-      throw new Error('请输入股票代码')
-    }
-
-    setIsValidatingHkSymbol(true)
-    setHkInfoError(null)
-    try {
-      const info = await requestHkStockInfo(sanitized)
-      const sanitizedSymbol = sanitizeSymbolInput(info?.symbol ?? sanitized, 'HK')
-      const displaySymbol = formatSymbolForDisplay(sanitizedSymbol, 'HK')
-      if (displaySymbol !== symbol) {
-        setSymbol(displaySymbol)
-      }
-      setStockInfo(info)
-      const tradeUnit = Math.max(1, Number(info?.trade_unit) || 0) || 100
-      setHkTradeUnit(tradeUnit)
-      return info
-    } catch (error: any) {
-      setStockInfo(null)
-      setHkTradeUnit(100)
-      setHkInfoError(error?.message || '获取港股信息失败')
-      throw error
-    } finally {
-      setIsValidatingHkSymbol(false)
-    }
-  }
 
   const handleMarketChange = (newMarket: MarketType) => {
     setMarket(newMarket)
@@ -135,11 +41,6 @@ export default function TradingPanel({ onPlace, balances, wsRef }: TradingPanelP
     setHkInfoError(null)
     setIsValidatingHkSymbol(false)
     setHkTradeUnit(newMarket === 'HK' ? 100 : 1)
-    pendingHkRequests.current.forEach(({ reject, timeoutId }) => {
-      clearTimeout(timeoutId)
-      reject.forEach((rejecter) => rejecter(new Error('市场已切换')))
-    })
-    pendingHkRequests.current.clear()
   }
 
   const handleSymbolBlur = () => {
@@ -155,6 +56,43 @@ export default function TradingPanel({ onPlace, balances, wsRef }: TradingPanelP
         setSymbol(displaySymbol)
       }
       void validateHkSymbol(sanitized)
+    }
+  }
+
+  const validateHkSymbol = async (inputSymbol: string) => {
+    const sanitized = sanitizeSymbolInput(inputSymbol, 'HK')
+    if (!sanitized) {
+      setHkInfoError('请输入股票代码')
+      throw new Error('请输入股票代码')
+    }
+
+    if (!tradingApi.isSocketOpen()) {
+      setHkInfoError('交易连接未就绪')
+      throw new Error('交易连接未就绪')
+    }
+
+    setIsValidatingHkSymbol(true)
+    setHkInfoError(null)
+
+    try {
+      const info = await tradingApi.requestHkStockInfo(sanitized)
+      const infoSymbol = info?.symbol ?? sanitized
+      const normalized = sanitizeSymbolInput(infoSymbol, 'HK') || sanitized
+      const displaySymbol = formatSymbolForDisplay(normalized, 'HK')
+      if (displaySymbol !== symbol) {
+        setSymbol(displaySymbol)
+      }
+      setStockInfo(info)
+      const tradeUnit = Math.max(1, Number(info?.trade_unit) || 0) || 100
+      setHkTradeUnit(tradeUnit)
+      return info
+    } catch (error: any) {
+      setStockInfo(null)
+      setHkTradeUnit(100)
+      setHkInfoError(error?.message || '获取港股信息失败')
+      throw error
+    } finally {
+      setIsValidatingHkSymbol(false)
     }
   }
 
@@ -217,9 +155,9 @@ export default function TradingPanel({ onPlace, balances, wsRef }: TradingPanelP
       try {
         const info = await validateHkSymbol(sanitizedSymbol)
         const infoSymbol = info?.symbol ?? sanitizedSymbol
-        const infoSanitized = sanitizeSymbolInput(infoSymbol, 'HK') || sanitizedSymbol
-        displaySymbol = formatSymbolForDisplay(infoSanitized, 'HK')
-        formattedSymbol = formatSymbolForMarket(infoSanitized, 'HK')
+        const normalized = sanitizeSymbolInput(infoSymbol, 'HK') || sanitizedSymbol
+        displaySymbol = formatSymbolForDisplay(normalized, 'HK')
+        formattedSymbol = formatSymbolForMarket(normalized, 'HK')
       } catch {
         return
       }
@@ -276,6 +214,7 @@ export default function TradingPanel({ onPlace, balances, wsRef }: TradingPanelP
               setSymbol(sanitizedValue)
               if (market === 'HK') {
                 setHkInfoError(null)
+                setStockInfo(null)
               }
             }}
             onBlur={handleSymbolBlur}
@@ -294,7 +233,7 @@ export default function TradingPanel({ onPlace, balances, wsRef }: TradingPanelP
                   setHkInfoError('请输入股票代码')
                 }
               }}
-              disabled={isValidatingHkSymbol || !wsRef?.current}
+              disabled={isValidatingHkSymbol || !tradingApi.isSocketOpen()}
             >
               {isValidatingHkSymbol ? '检查中' : '检查'}
             </Button>
@@ -302,7 +241,7 @@ export default function TradingPanel({ onPlace, balances, wsRef }: TradingPanelP
         </div>
         {market === 'HK' && stockInfo && (
           <div className="text-xs text-muted-foreground">
-            {stockInfo.name ? `${stockInfo.name} · 每手 ${hkTradeUnit} 股` : `每手 ${hkTradeUnit} 股`}
+            <a href={`https://xueqiu.com/S/${stockInfo.symbol}`} target="_blank" rel="noopener noreferrer">{stockInfo.name ? `${stockInfo.name} · 每手 ${hkTradeUnit} 股` : `每手 ${hkTradeUnit} 股`}</a>
           </div>
         )}
         {market === 'HK' && hkInfoError && (

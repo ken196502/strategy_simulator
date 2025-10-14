@@ -1,0 +1,22 @@
+{
+  "name": "hono-backend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "test": "tsx tests/api.test.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.8.2",
+    "hono": "^4.9.12",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.6",
+    "@types/ws": "^8.5.12",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3"
+  }
+}

@@ -75,8 +75,8 @@ const dictionaries: Record<Language, Record<string, string>> = {
     'tabs.orders': '委托',
     'tabs.trades': '成交',
 
-    'portfolio.totalAssets': '总资产 (USD)',
-    'portfolio.positionsValue': '持仓市值 (USD)',
+    'portfolio.totalAssets': '总资产',
+    'portfolio.positionsValue': '持仓市值',
     'portfolio.availableCash': '可用资金',
     'portfolio.frozenCash': '冻结资金',
     'portfolio.initialCapital': '初始资金',
