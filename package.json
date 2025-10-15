@@ -8,7 +8,8 @@
     "build": "pnpm run build:frontend && pnpm run build:backend",
     "build:frontend": "cd frontend && pnpm build",
     "build:backend": "cd hono-backend && pnpm build",
-    "install:all": "pnpm install && cd hono-backend && pnpm install"
+    "start": "cd hono-backend && pnpm start",
+    "install:all": "pnpm install && cd frontend && pnpm install && cd ../hono-backend && pnpm install"
   },
   "devDependencies": {
     "concurrently": "^8.2.0"

@@ -5,8 +5,9 @@ import {
   type PendingHkRequestsMap,
 } from '@/lib/trading'
 
-const WS_URL = 'ws://localhost:2314'
-const HTTP_BASE_URL = 'http://localhost:2314'
+// Use relative URLs in production, localhost in development
+const WS_URL = import.meta.env.DEV ? 'ws://localhost:2314' : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`
+const HTTP_BASE_URL = import.meta.env.DEV ? 'http://localhost:2314/api' : '/api'
 
 type MessageHandler = (message: any) => void
 type VoidHandler = () => void

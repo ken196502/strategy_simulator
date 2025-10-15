@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
+import { serveStatic } from '@hono/node-server/serve-static'
 import {
   XueqiuMarketDataError,
   setCookieString,
@@ -88,28 +89,36 @@ const app = new Hono()
 
 // Add CORS middleware
 app.use('*', cors({
-  origin: ['http://localhost:2414', 'http://localhost:3000', 'http://localhost:5173', 'http://192.168.99.49:2414', 'http://172.20.10.156:2414'],
+  origin: ['http://localhost:2314', 'http://localhost:3000', 'http://localhost:5173', 'http://192.168.99.49:2314', 'http://172.20.10.156:2314'],
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
 }))
 
-app.get('/health', (c) => c.json({ status: 'ok' }))
+// Serve static files from the frontend dist directory
+app.use('/assets/*', serveStatic({ root: './public' }))
+app.use('/doc.md', serveStatic({ root: './public', rewriteRequestPath: () => '/doc.md' }))
+app.use('/', serveStatic({ root: './public', rewriteRequestPath: (path) => path === '/' ? '/index.html' : path }))
+
+// API routes prefix
+const api = new Hono()
+
+api.get('/health', (c) => c.json({ status: 'ok' }))
 
 // Asset trend endpoint (placeholder)
-app.get('/asset-trend', (c) => {
+api.get('/asset-trend', (c) => {
   const userId = c.req.query('user_id')
   // Return empty snapshots for now since we're moving to browser storage
   return c.json({ snapshots: [] })
 })
 
-app.get('/xueqiu/cookie', (c) =>
+api.get('/xueqiu/cookie', (c) =>
   c.json({
     hasAnyCookie: hasAnyCookie(),
     hasUserCookie: hasUserCookie(),
   }),
 )
 
-app.post('/xueqiu/cookie', async (c) => {
+api.post('/xueqiu/cookie', async (c) => {
   let payload: unknown
   try {
     payload = await c.req.json()
@@ -131,12 +140,12 @@ app.post('/xueqiu/cookie', async (c) => {
   return c.json({ message: 'Cookie updated' })
 })
 
-app.delete('/xueqiu/cookie', (c) => {
+api.delete('/xueqiu/cookie', (c) => {
   clearCookieString()
   return c.json({ message: 'Cookie cleared' })
 })
 
-app.get('/market/last-price', async (c) => {
+api.get('/market/last-price', async (c) => {
   const symbol = c.req.query('symbol')?.trim()
   const market = normalizeMarket(c.req.query('market'))
 
@@ -161,7 +170,7 @@ app.get('/market/last-price', async (c) => {
   }
 })
 
-app.get('/market/kline', async (c) => {
+api.get('/market/kline', async (c) => {
   const symbol = c.req.query('symbol')?.trim()
   const market = normalizeMarket(c.req.query('market'))
   const period = c.req.query('period') ?? '1m'
@@ -187,7 +196,7 @@ app.get('/market/kline', async (c) => {
   }
 })
 
-app.get('/market/status', (c) => {
+api.get('/market/status', (c) => {
   const symbol = c.req.query('symbol')?.trim() ?? ''
   const market = normalizeMarket(c.req.query('market'))
   if (!market) {
@@ -198,12 +207,12 @@ app.get('/market/status', (c) => {
   return c.json(getMarketStatusEastmoney(symbol))
 })
 
-app.get('/overview', (c) => c.json(getTradingOverview()))
-app.get('/orders', (c) => c.json({ orders: getOrders() }))
-app.get('/positions', (c) => c.json({ positions: getPositions() }))
-app.get('/trades', (c) => c.json({ trades: getTrades() }))
+api.get('/overview', (c) => c.json(getTradingOverview()))
+api.get('/orders', (c) => c.json({ orders: getOrders() }))
+api.get('/positions', (c) => c.json({ positions: getPositions() }))
+api.get('/trades', (c) => c.json({ trades: getTrades() }))
 
-app.post('/orders', async (c) => {
+api.post('/orders', async (c) => {
   let payload: unknown
   try {
     payload = await c.req.json()
@@ -237,7 +246,7 @@ app.post('/orders', async (c) => {
   }
 })
 
-app.post('/orders/:orderNo/execute', async (c) => {
+api.post('/orders/:orderNo/execute', async (c) => {
   const orderNo = c.req.param('orderNo')
   try {
     const result = await executeOrder(orderNo)
@@ -251,7 +260,7 @@ app.post('/orders/:orderNo/execute', async (c) => {
   }
 })
 
-app.post('/orders/:orderNo/cancel', async (c) => {
+api.post('/orders/:orderNo/cancel', async (c) => {
   const orderNo = c.req.param('orderNo')
   try {
     const success = await cancelOrder(orderNo)
@@ -267,6 +276,12 @@ app.post('/orders/:orderNo/cancel', async (c) => {
     return c.json({ error: error instanceof Error ? error.message : 'Internal server error' }, 500)
   }
 })
+
+// Mount API routes under /api prefix
+app.route('/api', api)
+
+// Fallback to serve index.html for SPA routing
+app.get('*', serveStatic({ path: './public/index.html' }))
 
 app.onError((err, c) => {
   console.error('Unhandled error in Hono app', err)

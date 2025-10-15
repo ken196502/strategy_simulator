@@ -1,24 +1,31 @@
 # Build stage
-FROM node:18-alpine AS builder
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
 # Copy package files
 COPY frontend/package*.json ./
-COPY frontend/pnpm-lock.yaml ./
+COPY pnpm-lock.yaml ./
 
 # Install dependencies
 RUN npm install -g pnpm
 RUN pnpm install
+RUN npm install -g serve
 
-# Copy source code
-COPY frontend .
+# Copy source code and config files
+COPY frontend/app ./app
+COPY frontend/package.json ./
+COPY frontend/vite.config.ts ./
+COPY frontend/tailwind.config.js ./
+COPY frontend/index.html ./
+COPY frontend/postcss.config.js ./
+COPY frontend/tsconfig.json ./
 
 # Build the application
 RUN pnpm build
 
 # Production stage
-FROM node:18-alpine AS runner
+FROM node:20-alpine AS runner
 
 WORKDIR /app
 
@@ -37,4 +44,4 @@ EXPOSE 2414
 
 ENV NODE_ENV=production
 
-CMD ["node", "dist/server.js"]
+CMD ["node", "-e", "require('http').createServer((req, res) => { require('fs').createReadStream(require('path').join(__dirname, 'dist', 'index.html')).pipe(res); }).listen(2414)"]

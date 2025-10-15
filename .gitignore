@@ -305,3 +305,4 @@ cython_debug/
 backend/static/
 backend/data.db
 hono-backend/tests/
+hono-backend/public/
