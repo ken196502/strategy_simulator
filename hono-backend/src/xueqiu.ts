@@ -293,7 +293,7 @@ export const getLatestPrice = async (
   symbol: string,
   market: MarketType,
   options?: FetchKlineOptions,
-): Promise<number> => {
+): Promise<{ price: number; date: string; timestamp: number }> => {
   console.log(`[getLatestPrice] Starting price fetch for ${symbol} (${market})`)
   console.log(`[getLatestPrice] Cookie status - hasAny: ${hasAnyCookie()}, hasUser: ${hasUserCookie()}`)
   console.log(`[getLatestPrice] Global cookie:`, 
@@ -310,16 +310,20 @@ export const getLatestPrice = async (
     if (data.quote && data.quote.current) {
       const price = Number(data.quote.current)
       if (Number.isFinite(price) && price > 0) {
+        const priceDate = new Date().toISOString().split('T')[0] // 使用当前日期
+        const priceTimestamp = Date.now()
         console.log(`[getLatestPrice] Got price from data.quote.current:`, price)
-        return price
+        return { price, date: priceDate, timestamp: priceTimestamp }
       }
     }
     
     if (data.last_close) {
       const price = Number(data.last_close)
       if (Number.isFinite(price) && price > 0) {
+        const priceDate = new Date().toISOString().split('T')[0] // 使用当前日期
+        const priceTimestamp = Date.now()
         console.log(`[getLatestPrice] Got price from data.last_close:`, price)
-        return price
+        return { price, date: priceDate, timestamp: priceTimestamp }
       }
     }
     
@@ -358,8 +362,22 @@ export const getLatestPrice = async (
       throw new XueqiuMarketDataError('Snowball returned an invalid latest price.')
     }
     
-    console.log(`[getLatestPrice] Success! Returning price: ${price}`)
-    return price
+    // 获取行情数据的日期
+    const timestampIndex = columns.indexOf('timestamp')
+    let priceTimestamp = Date.now()
+    let priceDate = new Date().toISOString().split('T')[0] // 默认今天
+    
+    if (timestampIndex >= 0 && latest[timestampIndex]) {
+      const tsValue = latest[timestampIndex]
+      const tsNumber = typeof tsValue === 'number' ? tsValue : Number(tsValue)
+      if (Number.isFinite(tsNumber) && tsNumber > 0) {
+        priceTimestamp = tsNumber
+        priceDate = new Date(tsNumber).toISOString().split('T')[0]
+      }
+    }
+    
+    console.log(`[getLatestPrice] Success! Returning price: ${price}, date: ${priceDate}, timestamp: ${priceTimestamp}`)
+    return { price, date: priceDate, timestamp: priceTimestamp }
   } catch (error) {
     console.error(`[getLatestPrice] Error:`, error)
     

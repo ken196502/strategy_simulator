@@ -88,7 +88,7 @@ const app = new Hono()
 
 // Add CORS middleware
 app.use('*', cors({
-  origin: ['http://localhost:2414', 'http://localhost:3000', 'http://localhost:5173'],
+  origin: ['http://localhost:2414', 'http://localhost:3000', 'http://localhost:5173', 'http://192.168.99.49:2414', 'http://172.20.10.156:2414'],
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
 }))
@@ -147,7 +147,14 @@ app.get('/market/last-price', async (c) => {
   try {
     // Use Eastmoney directly for all cases - no need for Xueqiu
     const price = await getLatestPriceEastmoney(symbol)
-    return c.json({ symbol, market, price })
+    const currentDateUTC = new Date().toISOString().split('T')[0]
+    return c.json({ 
+      symbol, 
+      market, 
+      price, 
+      date: currentDateUTC, 
+      timestamp: Date.now() 
+    })
   } catch (error) {
     console.error('Error fetching last price from Eastmoney', error)
     return c.json({ error: error instanceof Error ? error.message : 'Internal server error' }, 500)
@@ -172,7 +179,7 @@ app.get('/market/kline', async (c) => {
   try {
     // Use Eastmoney directly - convert minute data to kline format
     const minuteData = await getStockMinData(symbol, '09:00:00', '15:50:00')
-    const records = convertMinuteDataToKline(minuteData).slice(-count || 100)
+    const records = convertMinuteDataToKline(minuteData).slice(-(count ?? 100))
     return c.json({ symbol, market, period, count: count ?? 100, records })
   } catch (error) {
     console.error('Error fetching kline data from Eastmoney', error)

@@ -168,6 +168,14 @@ export const checkOrderCanFill = (order: Order): boolean => {
     return false // 没有行情数据，不能成交
   }
 
+  // 校验行情日期是否为当天（按UTC时间）
+  const currentDateUTC = new Date().toISOString().split('T')[0]
+  const quoteDateUTC = new Date(quote.timestamp).toISOString().split('T')[0]
+  if (quoteDateUTC !== currentDateUTC) {
+    console.warn(`[checkOrderCanFill] Quote date mismatch for ${order.symbol}: quote date ${quoteDateUTC} vs current UTC date ${currentDateUTC}`)
+    return false // 行情不是当天的，不能成交
+  }
+
   // 市价单：有行情就可以成交
   const orderType = order.order_type.toLowerCase()
   if (orderType === 'market') {
@@ -216,6 +224,14 @@ export const executeFillOrder = (
   // 获取实际成交价格（使用当前市价）
   const quote = marketDataService.getQuote(order.symbol)
   if (!quote) {
+    return { overview, positions, orders, trades, filled: false }
+  }
+
+  // 校验行情日期是否为当天（按UTC时间）
+  const currentDateUTC = new Date().toISOString().split('T')[0]
+  const quoteDateUTC = new Date(quote.timestamp).toISOString().split('T')[0]
+  if (quoteDateUTC !== currentDateUTC) {
+    console.warn(`[executeFillOrder] Quote date mismatch for ${order.symbol}: quote date ${quoteDateUTC} vs current UTC date ${currentDateUTC}`)
     return { overview, positions, orders, trades, filled: false }
   }
 

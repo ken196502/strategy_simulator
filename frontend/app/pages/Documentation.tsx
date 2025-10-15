@@ -21,32 +21,10 @@ export default function Documentation() {
     return document.documentElement.classList.contains('dark');
   });
 
-  useEffect(() => {
-    const loadDocumentation = async () => {
-      try {
-        // Use a query parameter to prevent WebSocket operations
-        const response = await fetch('/doc.md');
-        if (!response.ok) {
-          throw new Error('Failed to load documentation');
-        }
-        const text = await response.text();
-        setMarkdown(text);
-      } catch (err) {
-        console.error('Error loading documentation:', err);
-        setError(t('documentation.loadError') || 'Failed to load documentation');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    // Set a flag to indicate we're on the documentation page
-    (window as any).isDocumentationPage = true;
-    loadDocumentation();
-
-    const toggleDarkMode = () => {
+  const toggleDarkMode = () => {
     const newDarkMode = !isDarkMode;
     setIsDarkMode(newDarkMode);
-    
+
     if (newDarkMode) {
       document.documentElement.classList.add('dark');
     } else {
@@ -77,7 +55,29 @@ export default function Documentation() {
     toast.success('Documentation downloaded!');
   };
 
-  return () => {
+  useEffect(() => {
+    const loadDocumentation = async () => {
+      try {
+        // Use a query parameter to prevent WebSocket operations
+        const response = await fetch('/doc.md');
+        if (!response.ok) {
+          throw new Error('Failed to load documentation');
+        }
+        const text = await response.text();
+        setMarkdown(text);
+      } catch (err) {
+        console.error('Error loading documentation:', err);
+        setError(t('documentation.loadError') || 'Failed to load documentation');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    // Set a flag to indicate we're on the documentation page
+    (window as any).isDocumentationPage = true;
+    loadDocumentation();
+
+    return () => {
       // Clean up the flag when component unmounts
       (window as any).isDocumentationPage = false;
     };

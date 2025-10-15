@@ -100,20 +100,6 @@ interface Trade {
 
 ## 本地存储架构
 
-### Storage 统一管理
-所有数据通过 `localStorage` 持久化，使用 `TradingStorage` 类统一管理：
-
-```typescript
-// 存储键映射
-const STORAGE_KEYS = {
-  OVERVIEW: 'trading_overview',
-  POSITIONS: 'trading_positions', 
-  ORDERS: 'trading_orders',
-  TRADES: 'trading_trades',
-  INITIALIZED: 'trading_initialized'
-}
-```
-
 ### 初始化数据
 系统首次运行时自动创建默认账户：
 - 美元: $10,000
@@ -379,49 +365,3 @@ const usdValue = {
 1. **每日快照**: 结合历史价格和当日持仓计算每日资产
 2. **时间序列**: 按日期排序生成资产变化曲线
 3. **收益计算**: 相对于初始资产的累计收益和百分比
-
-## WebSocket 通信协议
-
-### 消息类型
-```typescript
-// 前端请求
-{
-  type: 'get_snapshot'     // 获取持仓快照
-  type: 'place_order'       // 下单请求  
-  type: 'get_market_data'   // 获取行情数据
-}
-
-// 后端推送
-{
-  type: 'snapshot'          // 持仓数据快照
-  type: 'trade_executed'    // 成交通知
-  type: 'price_update'      // 价格更新
-}
-```
-
-### 连接管理
-- **单例模式**: 全局唯一 WebSocket 连接，避免 React StrictMode 重复创建
-- **自动重连**: 连接断开自动重连机制
-- **消息路由**: 根据消息类型分发到对应的处理函数
-
-## 数据一致性与错误处理
-
-### 并发安全
-- 所有状态更新都通过不可变对象实现
-- 使用函数式编程避免状态竞争
-- 订单按时间顺序处理，保证执行顺序
-
-### 错误处理
-```typescript
-// 订单验证失败
-{ success: false, message: '余额不足' }
-// 成交失败  
-{ success: false, message: '行情获取失败' }
-// 持仓不足
-{ success: false, message: '持仓不足' }
-```
-
-### 数据恢复
-- 应用启动时检查 localStorage 完整性
-- 数据损坏时自动重置为默认状态
-- 提供重置功能清空所有交易数据

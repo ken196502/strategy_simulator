@@ -89,7 +89,7 @@ function App() {
       if (msg.type === 'bootstrap_ok') {
         console.log('✅ Market data connection established')
       } else if (msg.type === 'snapshot') {
-        // 只更新行情相关数据和汇率
+        // 更新行情相关数据、汇率和后端状态数据
         const mdStatus = msg.market_data || msg.overview?.market_data
         if (mdStatus?.status === 'error' && mdStatus?.code === 'XUEQIU_COOKIE_REQUIRED') {
           openCookiePrompt(mdStatus.message)
@@ -112,6 +112,27 @@ function App() {
             tradingStorage.saveOverview(updated)
             return updated
           })
+        }
+
+        // 更新后端订单数据（如果后端提供）
+        if (Array.isArray(msg.orders)) {
+          setOrders(msg.orders)
+          tradingStorage.saveOrders(msg.orders)
+          console.log(`📋 Updated orders from backend: ${msg.orders.length} orders`)
+        }
+
+        // 更新后端持仓数据（如果后端提供）
+        if (Array.isArray(msg.positions)) {
+          setPositions(msg.positions)
+          tradingStorage.savePositions(msg.positions)
+          console.log(`📊 Updated positions from backend: ${msg.positions.length} positions`)
+        }
+
+        // 更新后端交易数据（如果后端提供）
+        if (Array.isArray(msg.trades)) {
+          setTrades(msg.trades)
+          tradingStorage.saveTrades(msg.trades)
+          console.log(`💰 Updated trades from backend: ${msg.trades.length} trades`)
         }
 
         // 更新行情价格到marketDataService（如果后端提供）

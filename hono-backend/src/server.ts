@@ -75,6 +75,9 @@ server.on('request', async (req, res) => {
   }
 })
 
-server.listen(port, () => {
-  console.log(`🚀 Hono backend listening on http://localhost:${port} with WebSocket support`)
+server.listen(port, '0.0.0.0', () => {
+  console.log(`🚀 Hono backend listening on http://0.0.0.0:${port} with WebSocket support`)
+  console.log(`📡 Accessible at http://localhost:${port} from local machine`)
+  console.log(`📡 Accessible at http://192.168.99.49:${port} from network`)
+  console.log(`📡 Accessible at http://172.20.10.156:${port} from network`)
 })

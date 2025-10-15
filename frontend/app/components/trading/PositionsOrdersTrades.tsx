@@ -95,7 +95,7 @@ const OrderBook: React.FC<{ orders: Order[]; onCancel: (orderNo: string) => void
         {orders.map((o) => (
           <TableRow key={o.id}>
             <TableCell className="font-mono text-sm">{o.order_no}</TableCell>
-            <TableCell className="font-medium">{o.symbol}.{o.market}</TableCell>
+            <TableCell className="font-medium">{o.symbol}</TableCell>
             <TableCell>{getSideBadge(o.side)}</TableCell>
             <TableCell>{o.order_type}</TableCell>
             <TableCell>{o.price ? `$${o.price.toFixed(2)}` : 'MARKET'}</TableCell>
@@ -186,7 +186,7 @@ const TradeHistory: React.FC<{ trades: Trade[] }> = ({ trades }) => (
           <TableRow key={t.id}>
             <TableCell>{new Date(t.trade_time).toLocaleString()}</TableCell>
             <TableCell>{t.order_id}</TableCell>
-            <TableCell>{t.symbol}.{t.market}</TableCell>
+            <TableCell>{t.symbol}</TableCell>
             <TableCell>{t.side}</TableCell>
             <TableCell>{t.price != null ? t.price.toFixed(4) : '-'}</TableCell>
             <TableCell>{t.quantity}</TableCell>

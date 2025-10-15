@@ -114,15 +114,17 @@ export const placeOrder = async (input: PlaceOrderInput): Promise<OrderState> =>
     throw new OrderError(`Quantity must be at least ${config.minOrderQuantity}`)
   }
 
-  let marketPrice: number
+  let marketPriceData: { price: number; date: string; timestamp: number }
   console.log(`[placeOrder] Getting market price for ${symbol} (${market})`)
   try {
-    marketPrice = await getLatestPrice(symbol, market)
-    console.log(`[placeOrder] Got market price for ${symbol}: ${marketPrice}`)
+    marketPriceData = await getLatestPrice(symbol, market)
+    console.log(`[placeOrder] Got market price for ${symbol}: ${marketPriceData.price} (date: ${marketPriceData.date})`)
   } catch (error) {
     console.error(`[placeOrder] Failed to get market price for ${symbol}:`, error)
     throw new OrderError(`Unable to get market price for ${symbol}: ${(error as Error).message}`)
   }
+  
+  const marketPrice = marketPriceData.price
 
   let refPrice = marketPrice
   if (orderType === 'LIMIT' && input.price != null) {
@@ -196,12 +198,22 @@ export const executeOrder = async (orderNo: string) => {
     }
   }
 
-  let executionPrice: number
+  let executionPriceData: { price: number; date: string; timestamp: number }
   try {
-    executionPrice = await getLatestPrice(order.symbol, order.market)
+    executionPriceData = await getLatestPrice(order.symbol, order.market)
   } catch (error) {
     throw new OrderError(`Unable to fetch execution price: ${(error as Error).message}`)
   }
+
+  // 校验行情日期是否为当天（按UTC时间）
+  const currentDateUTC = new Date().toISOString().split('T')[0]
+  if (executionPriceData.date !== currentDateUTC) {
+    console.warn(`[executeOrder] Quote date mismatch: quote date ${executionPriceData.date} vs current UTC date ${currentDateUTC}`)
+    throw new OrderError(`Cannot execute order: market data is not from today (quote: ${executionPriceData.date}, current: ${currentDateUTC})`)
+  }
+
+  const executionPrice = executionPriceData.price
+  console.log(`[executeOrder] Using execution price ${executionPrice} from ${executionPriceData.date} for order ${orderNo}`)
 
   const config = state.tradingConfigs[order.market]
   if (!config) {
@@ -309,9 +321,9 @@ export const cancelOrder = async (orderNo: string) => {
 
   if (order.side === 'BUY') {
     try {
-      const marketPrice = await getLatestPrice(order.symbol, order.market)
+      const marketPriceData = await getLatestPrice(order.symbol, order.market)
       const config = state.tradingConfigs[order.market]
-      const refPrice = order.orderType === 'LIMIT' && order.price != null ? order.price : marketPrice
+      const refPrice = order.orderType === 'LIMIT' && order.price != null ? order.price : marketPriceData.price
       const releaseNotional = refPrice * order.quantity
       const releaseCommission = calcCommission(config, releaseNotional)
       const { frozenKey } = getCashKeys(order.market)
