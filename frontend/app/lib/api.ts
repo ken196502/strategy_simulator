@@ -1,9 +1,4 @@
-import {
-  formatSymbolForMarket,
-  normalizeSymbol,
-  requestHkStockInfo as requestHkStockInfoHelper,
-  type PendingHkRequestsMap,
-} from '@/lib/trading'
+// Import removed - HK stock info now uses HTTP API
 
 // Use relative URLs in production, localhost in development
 const WS_URL = import.meta.env.DEV ? 'ws://localhost:2314' : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`
@@ -20,7 +15,6 @@ class TradingApi {
   private openHandlers = new Set<VoidHandler>()
   private closeHandlers = new Set<CloseHandler>()
   private errorHandlers = new Set<ErrorHandler>()
-  private pendingHkRequests: PendingHkRequestsMap = new Map()
 
   // 获取cookie状态
   async getCookieStatus() {
@@ -157,6 +151,7 @@ class TradingApi {
   }
 
   bootstrap(username: string, initialCapital: number) {
+    console.log(`🚀 [API] Sending bootstrap: username=${username}, initial_capital=${initialCapital}`)
     this.send({ type: 'bootstrap', username, initial_capital: initialCapital })
   }
 
@@ -172,18 +167,38 @@ class TradingApi {
     this.send({ type: 'get_snapshot' })
   }
 
+  subscribeQuotes(symbols: string[]) {
+    console.log(`📌 [API] Subscribing to quotes for:`, symbols)
+    this.send({ type: 'subscribe_quotes', symbols })
+  }
 
-  requestHkStockInfo(inputSymbol: string, timeoutMs?: number) {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      return Promise.reject(new Error('交易连接未就绪'))
+  async requestHkStockInfo(inputSymbol: string, timeoutMs?: number) {
+    const sanitized = inputSymbol.trim().replace(/\D/g, '').padStart(5, '0')
+    if (!sanitized) {
+      throw new Error('请输入有效的股票代码')
     }
 
-    return requestHkStockInfoHelper({
-      ws: this.ws,
-      pendingRequests: this.pendingHkRequests,
-      inputSymbol,
-      timeoutMs,
-    })
+    try {
+      const response = await fetch(`${HTTP_BASE_URL}/hk-stock-info/${sanitized}`, {
+        signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
+      })
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: '获取港股信息失败' }))
+        throw new Error(error.error || '获取港股信息失败')
+      }
+
+      const data = await response.json()
+      return data.info
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.name === 'AbortError' || error.name === 'TimeoutError') {
+          throw new Error('获取港股信息超时，请重试')
+        }
+        throw error
+      }
+      throw new Error('获取港股信息失败')
+    }
   }
 
   private handleOpen = () => {
@@ -198,61 +213,16 @@ class TradingApi {
       return
     }
 
-    if (data?.type === 'hk_stock_info' || data?.type === 'hk_stock_info_error') {
-      this.handleHkStockInfoResponse(data)
-    }
-
     this.messageHandlers.forEach((handler) => handler(data))
   }
 
   private handleClose = (event: CloseEvent) => {
-    this.rejectPendingHkRequests(new Error('连接已断开'))
     this.closeHandlers.forEach((handler) => handler(event))
     this.ws = null
   }
 
   private handleError = (event: Event) => {
     this.errorHandlers.forEach((handler) => handler(event))
-  }
-
-  private handleHkStockInfoResponse(message: any) {
-    const symbolValue = message?.symbol ?? ''
-    const key = normalizeSymbol(symbolValue)
-    const formatted = formatSymbolForMarket(symbolValue, 'HK')
-    const fallbackKey = formatted ? normalizeSymbol(formatted) : null
-    const targetKey = this.pendingHkRequests.has(key)
-      ? key
-      : fallbackKey && this.pendingHkRequests.has(fallbackKey)
-        ? fallbackKey
-        : null
-
-    if (!targetKey) {
-      return
-    }
-
-    const pending = this.pendingHkRequests.get(targetKey)
-    if (!pending) {
-      return
-    }
-
-    clearTimeout(pending.timeoutId)
-
-    if (message.type === 'hk_stock_info') {
-      pending.resolve.forEach((resolver) => resolver(message.info))
-    } else {
-      const error = new Error(message.message || '无法获取港股信息')
-      pending.reject.forEach((rejecter) => rejecter(error))
-    }
-
-    this.pendingHkRequests.delete(targetKey)
-  }
-
-  private rejectPendingHkRequests(error: Error) {
-    this.pendingHkRequests.forEach(({ reject, timeoutId }) => {
-      clearTimeout(timeoutId)
-      reject.forEach((rejecter) => rejecter(error))
-    })
-    this.pendingHkRequests.clear()
   }
 }
 

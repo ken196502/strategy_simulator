@@ -11,6 +11,7 @@ import {
 } from './orderService'
 import { XueqiuMarketDataError, setCookieString } from './xueqiu'
 import { getHKStockInfo } from './hk_stock_info'
+import { getLatestPrice as getLatestPriceEastmoney } from './eastmoney'
 
 interface WebSocketMessage {
   type: string
@@ -24,12 +25,17 @@ interface ClientConnection {
 
 class ConnectionManager {
   private connections = new Map<string, Set<WebSocket>>()
+  private userSubscriptions = new Map<string, Set<string>>() // userId -> Set<symbol>
 
   register(userId: string, ws: WebSocket) {
     if (!this.connections.has(userId)) {
       this.connections.set(userId, new Set())
     }
     this.connections.get(userId)!.add(ws)
+    
+    if (!this.userSubscriptions.has(userId)) {
+      this.userSubscriptions.set(userId, new Set())
+    }
   }
 
   unregister(userId: string, ws: WebSocket) {
@@ -38,8 +44,21 @@ class ConnectionManager {
       userConnections.delete(ws)
       if (userConnections.size === 0) {
         this.connections.delete(userId)
+        this.userSubscriptions.delete(userId)
       }
     }
+  }
+  
+  subscribeSymbol(userId: string, symbol: string) {
+    if (!this.userSubscriptions.has(userId)) {
+      this.userSubscriptions.set(userId, new Set())
+    }
+    this.userSubscriptions.get(userId)!.add(symbol)
+    console.log(`📌 [订阅] 用户 ${userId} 订阅了 ${symbol}`)
+  }
+  
+  getSubscribedSymbols(userId: string): Set<string> {
+    return this.userSubscriptions.get(userId) || new Set()
   }
 
   async sendToUser(userId: string, message: any) {
@@ -74,26 +93,69 @@ class ConnectionManager {
 
 const connectionManager = new ConnectionManager()
 
-async function sendSnapshot(userId: string) {
+// 限流：每个用户最多5秒推送一次
+const lastPushTime = new Map<string, number>()
+const PUSH_INTERVAL = 5000 // 5秒
+
+async function sendSnapshot(userId: string, force: boolean = false) {
+  const now = Date.now()
+  const lastTime = lastPushTime.get(userId) || 0
+  
+  if (!force && now - lastTime < PUSH_INTERVAL) {
+    console.log(`⏱️  [WebSocket] 跳过推送 ${userId}，距离上次推送 ${Math.floor((now - lastTime) / 1000)}秒`)
+    return
+  }
+  
+  lastPushTime.set(userId, now)
   try {
-    const overview = getTradingOverview()
     const positions = getPositions()
     const orders = getOrders()
-    const trades = getTrades()
+    
+    console.log(`📊 [sendSnapshot] 用户 ${userId}: ${positions.length} 个持仓, ${orders.length} 个订单`)
 
+    // 获取需要推送行情的股票代码：持仓 + 订单 + 用户订阅
+    const symbols = new Set<string>()
+    positions.forEach(p => symbols.add(p.symbol))
+    orders.forEach(o => symbols.add(o.symbol))
+    
+    // 重要：添加前端订阅的股票（即使后端没有订单/持仓）
+    const subscribedSymbols = connectionManager.getSubscribedSymbols(userId)
+    subscribedSymbols.forEach(s => symbols.add(s))
+    
+    console.log(`📋 [sendSnapshot] 需要获取行情的股票: ${Array.from(symbols).join(', ') || '(无)'}`)
+
+    // 批量获取行情数据
+    const quotes: Array<{ symbol: string; date: string; price: number }> = []
+    const currentDate = new Date().toISOString().split('T')[0]
+    
+    for (const symbol of symbols) {
+      try {
+        const price = await getLatestPriceEastmoney(symbol)
+        if (price > 0) {
+          quotes.push({ 
+            symbol, 
+            date: currentDate, 
+            price 
+          })
+          console.log(`📈 [WebSocket] 推送行情: ${symbol} ${currentDate} $${price}`)
+        }
+      } catch (error) {
+        console.warn(`⚠️  [WebSocket] 获取行情失败: ${symbol}`, error)
+      }
+    }
+
+    console.log(`📤 [sendSnapshot] 推送给 ${userId}: ${quotes.length} 条行情数据`)
+    
     await connectionManager.sendToUser(userId, {
-      type: 'snapshot',
-      overview,
-      positions,
-      orders,
-      trades,
-      market_data: { status: 'ok' }, // Simplified for now
+      type: 'market_data',
+      quotes,
     })
+    
   } catch (error) {
-    console.error('Error sending snapshot:', error)
+    console.error('Error sending market data:', error)
     await connectionManager.sendToUser(userId, {
       type: 'error',
-      message: 'Failed to generate snapshot',
+      message: 'Failed to fetch market data',
     })
   }
 }
@@ -122,7 +184,7 @@ export function setupWebSocketServer(server: any) {
                 user: { id: userId, username: userId },
               })
               
-              await sendSnapshot(userId)
+              await sendSnapshot(userId, true) // 首次连接强制推送
             }
             break
 
@@ -131,13 +193,34 @@ export function setupWebSocketServer(server: any) {
               userId = message.user_id
               if (userId) {
                 connectionManager.register(userId, ws)
-                await sendSnapshot(userId)
+                await sendSnapshot(userId, true) // 首次订阅强制推送
               }
             } else {
               ws.send(JSON.stringify({
                 type: 'error',
                 message: 'user_id required for subscribe',
               }))
+            }
+            break
+
+          case 'subscribe_quotes':
+            if (!userId) {
+              ws.send(JSON.stringify({
+                type: 'error',
+                message: 'not bootstrapped',
+              }))
+              break
+            }
+
+            // 前端告诉后端它需要哪些股票的行情
+            if (Array.isArray(message.symbols) && userId) {
+              message.symbols.forEach((symbol: string) => {
+                if (symbol && userId) {
+                  connectionManager.subscribeSymbol(userId, symbol)
+                }
+              })
+              // 立即推送一次行情
+              await sendSnapshot(userId, true)
             }
             break
 
@@ -169,12 +252,6 @@ export function setupWebSocketServer(server: any) {
                 console.log('Order execution failed, keeping as pending:', execError)
               }
 
-              await connectionManager.sendToUser(userId, {
-                type: executed ? 'order_filled' : 'order_placed',
-                order_id: order.orderNo,
-                status: executed ? 'FILLED' : 'PENDING',
-              })
-
               await sendSnapshot(userId)
             } catch (error) {
               const errorMessage = error instanceof OrderError || error instanceof XueqiuMarketDataError
@@ -200,16 +277,7 @@ export function setupWebSocketServer(server: any) {
             try {
               const success = await cancelOrder(message.order_no)
               if (success) {
-                await connectionManager.sendToUser(userId, {
-                  type: 'order_cancelled',
-                  order_no: message.order_no,
-                })
                 await sendSnapshot(userId)
-              } else {
-                await connectionManager.sendToUser(userId, {
-                  type: 'error',
-                  message: 'Order not found or not cancellable',
-                })
               }
             } catch (error) {
               await connectionManager.sendToUser(userId, {
@@ -269,38 +337,11 @@ export function setupWebSocketServer(server: any) {
             break
 
           case 'get_trades':
-            if (userId) {
-              const trades = getTrades()
-              await connectionManager.sendToUser(userId, {
-                type: 'trades',
-                trades,
-              })
-            }
+            // Removed - only push market data
             break
 
           case 'get_hk_stock_info':
-            if (!userId) {
-              ws.send(JSON.stringify({
-                type: 'error',
-                message: 'not bootstrapped',
-              }))
-              break
-            }
-
-            try {
-              const stockInfo = await getHKStockInfo(message.symbol)
-              await connectionManager.sendToUser(userId, {
-                type: 'hk_stock_info',
-                symbol: message.symbol,
-                info: stockInfo,
-              })
-            } catch (error) {
-              await connectionManager.sendToUser(userId, {
-                type: 'hk_stock_info_error',
-                symbol: message.symbol,
-                message: error instanceof Error ? error.message : 'Unknown error',
-              })
-            }
+            // Removed - only push market data
             break
 
           case 'ping':

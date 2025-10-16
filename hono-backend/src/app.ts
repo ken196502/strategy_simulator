@@ -89,20 +89,34 @@ const app = new Hono()
 
 // Add CORS middleware
 app.use('*', cors({
-  origin: ['http://localhost:2314', 'http://localhost:3000', 'http://localhost:5173', 'http://192.168.99.49:2314', 'http://172.20.10.156:2314'],
+  origin: ['http://localhost:2314', 'http://localhost:2414', 'http://localhost:3000', 'http://localhost:5173', 'http://192.168.99.49:2314', 'http://192.168.99.49:2414', 'http://172.20.10.156:2314', 'http://172.20.10.156:2414', 'http://198.18.0.1:2414'],
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
 }))
 
-// Serve static files from the frontend dist directory
-app.use('/assets/*', serveStatic({ root: './public' }))
-app.use('/doc.md', serveStatic({ root: './public', rewriteRequestPath: () => '/doc.md' }))
-app.use('/', serveStatic({ root: './public', rewriteRequestPath: (path) => path === '/' ? '/index.html' : path }))
-
-// API routes prefix
+// API routes prefix - MUST be defined before static file serving
 const api = new Hono()
 
 api.get('/health', (c) => c.json({ status: 'ok' }))
+
+// 港股信息查询
+api.get('/hk-stock-info/:symbol', async (c) => {
+  const symbol = c.req.param('symbol')
+  if (!symbol) {
+    return c.json({ error: 'symbol parameter is required' }, 400)
+  }
+
+  try {
+    const { getHKStockInfo } = await import('./hk_stock_info')
+    const info = await getHKStockInfo(symbol)
+    return c.json({ symbol, info })
+  } catch (error) {
+    console.error('Error fetching HK stock info:', error)
+    return c.json({ 
+      error: error instanceof Error ? error.message : 'Failed to fetch HK stock info' 
+    }, 500)
+  }
+})
 
 // Asset trend endpoint (placeholder)
 api.get('/asset-trend', (c) => {
@@ -277,10 +291,15 @@ api.post('/orders/:orderNo/cancel', async (c) => {
   }
 })
 
-// Mount API routes under /api prefix
+// Mount API routes under /api prefix - MUST be before static files
 app.route('/api', api)
 
-// Fallback to serve index.html for SPA routing
+// Serve static files from the frontend dist directory
+app.use('/assets/*', serveStatic({ root: './public' }))
+app.get('/doc.md', serveStatic({ path: './public/doc.md' }))
+app.get('/', serveStatic({ path: './public/index.html' }))
+
+// Fallback to serve index.html for SPA routing (must be last)
 app.get('*', serveStatic({ path: './public/index.html' }))
 
 app.onError((err, c) => {

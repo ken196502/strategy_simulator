@@ -66,16 +66,11 @@ export default function TradingPanel({ onPlace, balances }: TradingPanelProps) {
       throw new Error('请输入股票代码')
     }
 
-    if (!tradingApi.isSocketOpen()) {
-      setHkInfoError('交易连接未就绪')
-      throw new Error('交易连接未就绪')
-    }
-
     setIsValidatingHkSymbol(true)
     setHkInfoError(null)
 
     try {
-      const info = await tradingApi.requestHkStockInfo(sanitized)
+      const info = await tradingApi.requestHkStockInfo(sanitized, 5000)
       const infoSymbol = info?.symbol ?? sanitized
       const normalized = sanitizeSymbolInput(infoSymbol, 'HK') || sanitized
       const displaySymbol = formatSymbolForDisplay(normalized, 'HK')

@@ -42,11 +42,11 @@ cd frontend && pnpm dev --port 2414
 
 ## Architecture
 
-### Backend (Python/FastAPI)
+### Backend (TypeScript/Hono + Node.js)
 - **WebSocket-Only Runtime**: Only the `/ws` endpoint is exposed via WebSocket - no HTTP routes
 - **Connection Management**: Uses a `ConnectionManager` singleton to manage multiple WebSocket connections per user
-- **Database**: SQLite with SQLAlchemy ORM, models include User, Order, Position, Trade, ExchangeRate
-- **Real-time Services**: Order execution, market data (via Xueqiu API), asset calculations, background order monitoring
+- **Services**: In-memory state management for users, orders, positions, and trades with multi-currency support
+- **Real-time Services**: Order execution, market data (via Xueqiu API), asset calculations, order monitoring
 - **Multi-Currency Support**: USD, HKD, and CNY with exchange rate management
 
 ### Frontend (React/Vite)
@@ -58,23 +58,19 @@ cd frontend && pnpm dev --port 2414
 
 ### Key Services
 
-#### Backend Services ([backend/services/](backend/services/)):
-- **order_service.py**: Order placement and execution logic
-- **market_data.py**: Real-time price data from Xueqiu API
-- **asset_calculator.py**: Multi-currency portfolio valuation
-- **order_monitor.py**: Background order execution monitoring
-- **xueqiu.py**: Snowball market data integration with cookie authentication
-- **hk_stock_info.py**: Hong Kong stock information service
+#### Backend Services ([hono-backend/src/](hono-backend/src/)):
+- **orderService.ts**: Order placement and execution logic
+- **xueqiu.ts**: Snowball market data integration with cookie authentication
+- **hk_stock_info.ts**: Hong Kong stock information service
 
-#### Repositories ([backend/repositories/](backend/repositories/)):
-- **user_repo.py**: User management
-- **order_repo.py**: Order CRUD operations
-- **position_repo.py**: Position tracking
-- **asset_snapshot_repo.py**: Asset snapshot generation
-- **daily_price_repo.py**: Daily price data management
+#### HTTP-based API Routes ([hono-backend/src/app.ts](hono-backend/src/app.ts)):
+- **asset_trend**: Asset trend reporting endpoints (HTTP-based)
 
-#### API Routes ([backend/api/routes/](backend/api/routes/)):
-- **asset_trend.py**: Asset trend reporting endpoints (HTTP-based)
+#### Frontend Services ([frontend/app/lib/](frontend/app/lib/)):
+- **tradingLogic.ts**: Automated trading strategies and order management
+- **websocketHandler.ts**: WebSocket message processing and state updates
+- **marketData.ts**: Market data management and quote updates
+- **storage.ts**: Local data persistence and state management
 
 ### WebSocket Protocol
 
@@ -87,7 +83,7 @@ The app follows a strict WebSocket protocol documented in [README.md](README.md#
 - `ping/pong` - Connection health check
 
 ### Data Models
-See [backend/database/models.py](backend/database/models.py) for comprehensive data structure:
+In-memory data structures (no database):
 - **User**: Multi-currency balance management (USD, HKD, CNY)
 - **Order**: Trading orders with execution logic
 - **Position**: Portfolio positions with market value tracking
@@ -104,10 +100,17 @@ See [frontend/app/main.tsx](frontend/app/main.tsx:1) for the WebSocket client ar
 ## Ports
 - Backend WebSocket: `ws://localhost:2314/ws`
 - Frontend: `http://localhost:2414`
-- Backend management UI: Not implemented (WS-only)
+- Backend HTTP API: `http://localhost:2314` (for asset trends only)
 
 ## Development Notes
-- The backend database file `demo_trading.db` can be deleted to reset demo data
+- The application uses in-memory state management - restart the backend to reset demo data
 - Multiple connect/disconnect logs are expected due to React StrictMode behavior
 - CORS middleware is present but not required for WebSocket-only usage
 - Market data requires valid Xueqiu cookies for real-time price updates
+- The backend uses Hono framework with WebSocket support and HTTP API endpoints
+
+## Testing
+Backend tests can be run with:
+```bash
+cd hono-backend && pnpm test
+```

@@ -19,6 +19,9 @@ const dictionaries: Record<Language, Record<string, string>> = {
     'sidebar.portfolio': 'Portfolio',
     'sidebar.trading': 'Trading',
     'sidebar.assetTrend': 'Asset Trend',
+    'sidebar.documentation': 'Doc',
+    'sidebar.placeOrder': 'Order',
+    'sidebar.trend': 'Trend',
 
     'tabs.positions': 'Positions',
     'tabs.orders': 'Orders',
@@ -70,6 +73,9 @@ const dictionaries: Record<Language, Record<string, string>> = {
     'sidebar.portfolio': '资产',
     'sidebar.trading': '交易',
     'sidebar.assetTrend': '资产曲线',
+    'sidebar.documentation': '文档',
+    'sidebar.placeOrder': '下单',
+    'sidebar.trend': '走势',
 
     'tabs.positions': '持仓',
     'tabs.orders': '委托',

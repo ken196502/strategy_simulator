@@ -20,18 +20,22 @@ type EastmoneyDataRecord = {
 }
 
 const getMarketCode = (symbol: string): number => {
+  // 移除市场后缀用于判断
+  const cleaned = symbol.toUpperCase().replace(/\.(HK|US|CN)$/, '')
+  const digits = cleaned.replace(/[^0-9]/g, '')
+  
   // 港股：5位数字且第一位是0，返回116
-  if (symbol.length === 5 && symbol.startsWith("0")) {
+  if (digits.length === 5 && digits.startsWith("0")) {
     return 116
   }
 
-  // 美股：包含字母或者纯数字，返回105
-  if (/^[A-Z0-9]+$/i.test(symbol) && !symbol.match(/^\d{6}$/)) {
+  // 美股：包含字母或者纯数字（非6位），返回105
+  if (/^[A-Z0-9]+$/i.test(cleaned) && !cleaned.match(/^\d{6}$/)) {
     return 105
   }
 
   // A股：6开头是上海(1)，其他是深证(0)
-  return symbol.startsWith("6") ? 1 : 0
+  return cleaned.startsWith("6") ? 1 : 0
 }
 
 const isHK = (symbol: string): boolean => {
@@ -47,6 +51,9 @@ const formatSymbol = (symbol: string): string => {
   if (!upper) return upper
 
   let core = upper
+  // 移除市场后缀 .HK, .US, .CN
+  core = core.replace(/\.(HK|US|CN)$/, '')
+  
   if (core.startsWith('SH') || core.startsWith('SZ')) {
     core = core.substring(2)
   }
@@ -54,14 +61,14 @@ const formatSymbol = (symbol: string): string => {
   const digits = core.replace(/[^0-9]/g, '')
   if (!digits) return upper
 
-  // 美股保持原样，不进行数字转换
-  if (isUS(symbol)) {
-    return core
+  // 港股：5位数字且以0开头
+  if (digits.length === 5 && digits.startsWith('0')) {
+    return digits
   }
 
-  // 港股不需要填充，保持原样
-  if (isHK(symbol)) {
-    return digits
+  // 美股保持原样，不进行数字转换
+  if (isUS(core)) {
+    return core
   }
 
   // A股填充到6位
@@ -220,7 +227,11 @@ export const getLatestPrice = async (symbol: string): Promise<number> => {
 
     // 获取最新一条记录
     const latestRecord = raw.data.trends[raw.data.trends.length - 1].split(',')
-    const latestPrice = Number(latestRecord[7]) // 最新价字段
+    // 尝试获取最新价：优先使用收盘价(index 2)，如果为0则使用开盘价(index 1)
+    let latestPrice = Number(latestRecord[2]) // 收盘价
+    if (!latestPrice || latestPrice <= 0) {
+      latestPrice = Number(latestRecord[1]) // 开盘价
+    }
 
     console.log(`[getLatestPrice] Got latest price:`, latestPrice)
 

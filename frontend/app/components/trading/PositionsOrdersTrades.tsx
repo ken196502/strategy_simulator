@@ -7,6 +7,7 @@ import { useTranslation } from '@/lib/i18n'
 export interface Position {
   id: number
   symbol: string
+  name?: string  // 股票名称（可选）
   market: string
   quantity: number
   avg_cost: number
@@ -201,6 +202,19 @@ const TradeHistory: React.FC<{ trades: Trade[] }> = ({ trades }) => (
 
 const PositionsOrdersTrades: React.FC<PositionsOrdersTradesProps> = ({ positions, orders, trades, onCancel }) => {
   const { t } = useTranslation()
+
+  // 调试：检查组件是否收到新的props
+  console.log('🔧 [PositionsOrdersTrades] Rendering with:')
+  console.log('  - Positions count:', positions.length)
+  console.log('  - Orders count:', orders.length)
+  console.log('  - Trades count:', trades.length)
+  
+  if (orders.length > 0) {
+    console.log('  - Latest order:', orders[orders.length - 1])
+  }
+  if (trades.length > 0) {
+    console.log('  - Latest trade:', trades[trades.length - 1])
+  }
 
   return (
     <Tabs defaultValue="positions" className="h-full flex flex-col">

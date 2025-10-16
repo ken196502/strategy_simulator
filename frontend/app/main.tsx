@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
@@ -22,37 +22,50 @@ import AssetTrend from '@/pages/AssetTrend'
 import Documentation from '@/pages/Documentation'
 import type { Overview } from '@/types/overview'
 import tradingApi from '@/lib/api'
-import { tradingStorage } from '@/lib/storage'
-import { executePlaceOrder, checkAndFillOrders, executeCancelOrder } from '@/lib/orderExecutor'
-import { marketDataService } from '@/lib/marketData'
 import { priceHistoryService } from '@/lib/priceHistory'
+import { TradingLogic } from '@/lib/tradingLogic'
+import { handleWebSocketMessage } from '@/lib/websocketHandler'
+import type { PlaceOrderPayload } from '@/lib/tradingLogic'
 
 function App() {
   const [userId, setUserId] = useState<number | null>(null)
   
-  // 从本地存储初始化数据
-  const initializeFromStorage = () => {
-    if (!tradingStorage.isInitialized()) {
-      tradingStorage.initialize()
-    }
-    return {
-      overview: tradingStorage.getOverview(),
-      positions: tradingStorage.getPositions(),
-      orders: tradingStorage.getOrders(),
-      trades: tradingStorage.getTrades(),
-    }
-  }
-
-  const initialData = initializeFromStorage()
-  const [overview, setOverview] = useState<Overview>(initialData.overview)
-  const [positions, setPositions] = useState<Position[]>(initialData.positions)
-  const [orders, setOrders] = useState<Order[]>(initialData.orders)
-  const [trades, setTrades] = useState<Trade[]>(initialData.trades)
+  // 初始化交易逻辑
+  const tradingLogicRef = useRef<TradingLogic | null>(null)
+  
+  const [overview, setOverview] = useState<Overview | null>(null)
+  const [positions, setPositions] = useState<Position[]>([])
+  const [orders, setOrders] = useState<Order[]>([])
+  const [trades, setTrades] = useState<Trade[]>([])
   const [cookieDialogOpen, setCookieDialogOpen] = useState(false)
   const [cookieInput, setCookieInput] = useState('')
   const [cookieError, setCookieError] = useState<string | null>(null)
   const [cookieSaving, setCookieSaving] = useState(false)
   const [cookieRequired, setCookieRequired] = useState(false)
+
+  // 初始化交易逻辑实例
+  if (!tradingLogicRef.current) {
+    tradingLogicRef.current = new TradingLogic({
+      onStateUpdate: (state) => {
+        setOverview(state.overview)
+        setPositions(state.positions)
+        setOrders(state.orders)
+        setTrades(state.trades)
+      },
+      onOrderFilled: () => {
+        // 可以在这里添加通知逻辑
+      },
+      onError: (message) => {
+        window.alert(message)
+      },
+    })
+    tradingLogicRef.current.initialize()
+    const initialState = tradingLogicRef.current.getState()
+    setOverview(initialState.overview)
+    setPositions(initialState.positions)
+    setOrders(initialState.orders)
+    setTrades(initialState.trades)
+  }
 
   const openCookiePrompt = (message?: string) => {
     setCookieDialogOpen(true)
@@ -79,112 +92,59 @@ function App() {
     const unsubscribeOpen = tradingApi.onOpen(() => {
       tradingApi.bootstrap('demo', 100000)
       console.log('✅ Connected to market data server')
+      
+      // Subscribe to quotes for current positions
+      if (tradingLogicRef.current) {
+        const currentState = tradingLogicRef.current.getState()
+        const symbolsToSubscribe = currentState.positions.map(pos => pos.symbol)
+        if (symbolsToSubscribe.length > 0) {
+          console.log('📌 [main.tsx] Subscribing to quotes for positions:', symbolsToSubscribe)
+          tradingApi.subscribeQuotes(symbolsToSubscribe)
+        }
+      }
     })
 
     const unsubscribeMessage = tradingApi.onMessage((msg: any) => {
-      if (!msg || typeof msg !== 'object') {
-        return
-      }
-
-      if (msg.type === 'bootstrap_ok') {
-        console.log('✅ Market data connection established')
-      } else if (msg.type === 'snapshot') {
-        // 更新行情相关数据、汇率和后端状态数据
-        const mdStatus = msg.market_data || msg.overview?.market_data
-        if (mdStatus?.status === 'error' && mdStatus?.code === 'XUEQIU_COOKIE_REQUIRED') {
-          openCookiePrompt(mdStatus.message)
+      console.log('📨 [main.tsx] 收到 WebSocket 消息:', msg?.type)
+      handleWebSocketMessage(msg, {
+        onCookieRequired: (message) => {
+          console.log('🔐 [main.tsx] Cookie required:', message)
+          openCookiePrompt(message)
           setCookieSaving(false)
-        } else if (mdStatus?.status === 'ok') {
-          setCookieRequired(false)
-          setCookieDialogOpen(false)
+        },
+        onCookieUpdated: () => {
+          console.log('✅ [main.tsx] Cookie updated')
+          setCookieSaving(false)
           setCookieError(null)
-          setCookieSaving(false)
-        }
-
-        // 更新汇率到本地数据（如果后端提供）
-        if (msg.overview?.exchange_rates) {
-          setOverview(prev => {
-            const updated = {
-              ...prev,
-              exchange_rates: msg.overview.exchange_rates,
-              market_data: msg.overview.market_data ?? prev.market_data,
+          setCookieDialogOpen(false)
+          setCookieInput('')
+          setCookieRequired(false)
+          tradingApi.requestSnapshot()
+        },
+        onPositionsUpdate: (updatedPositions) => {
+          console.log('📊 [main.tsx] 持仓更新:', updatedPositions.length, '个')
+          // 只更新持仓的行情价格，其他数据来自 localStorage
+          tradingLogicRef.current?.updateState({ positions: updatedPositions })
+        },
+        onOrdersFilled: (filledCount) => {
+          console.log('🎉 [main.tsx] 订单成交:', filledCount, '个')
+          // 从 localStorage 重新加载所有数据，确保 UI 同步
+          if (tradingLogicRef.current) {
+            const state = tradingLogicRef.current.getState()
+            setOverview(state.overview)
+            setPositions(state.positions)
+            setOrders(state.orders)
+            setTrades(state.trades)
+            
+            // Subscribe to quotes for any new positions
+            const symbolsToSubscribe = state.positions.map(pos => pos.symbol)
+            if (symbolsToSubscribe.length > 0) {
+              console.log('📌 [main.tsx] Subscribing to quotes after order fill:', symbolsToSubscribe)
+              tradingApi.subscribeQuotes(symbolsToSubscribe)
             }
-            tradingStorage.saveOverview(updated)
-            return updated
-          })
-        }
-
-        // 更新后端订单数据（如果后端提供）
-        if (Array.isArray(msg.orders)) {
-          setOrders(msg.orders)
-          tradingStorage.saveOrders(msg.orders)
-          console.log(`📋 Updated orders from backend: ${msg.orders.length} orders`)
-        }
-
-        // 更新后端持仓数据（如果后端提供）
-        if (Array.isArray(msg.positions)) {
-          setPositions(msg.positions)
-          tradingStorage.savePositions(msg.positions)
-          console.log(`📊 Updated positions from backend: ${msg.positions.length} positions`)
-        }
-
-        // 更新后端交易数据（如果后端提供）
-        if (Array.isArray(msg.trades)) {
-          setTrades(msg.trades)
-          tradingStorage.saveTrades(msg.trades)
-          console.log(`💰 Updated trades from backend: ${msg.trades.length} trades`)
-        }
-
-        // 更新行情价格到marketDataService（如果后端提供）
-        if (Array.isArray(msg.positions) && msg.positions.length > 0) {
-          // 批量更新行情（优化性能）
-          const quotes = msg.positions
-            .filter((pos: any) => pos.symbol && (pos.lastPrice || pos.current_price))
-            .map((pos: any) => ({
-              symbol: pos.symbol,
-              current_price: pos.lastPrice || pos.current_price,
-              timestamp: Date.now(),
-            }))
-          
-          if (quotes.length > 0) {
-            marketDataService.updateQuotes(quotes)
           }
-
-          // 更新持仓的当前价格
-          setPositions(prevPositions => {
-            const updatedPositions = prevPositions.map(pos => {
-              const backendPos = msg.positions.find((p: any) => p.symbol === pos.symbol)
-              const price = backendPos?.lastPrice || backendPos?.current_price
-              if (price) {
-                return {
-                  ...pos,
-                  current_price: price,
-                  market_value: price * pos.quantity,
-                  pnl: (price - pos.avg_cost) * pos.quantity,
-                  pnl_percent: ((price - pos.avg_cost) / pos.avg_cost) * 100,
-                }
-              }
-              return pos
-            })
-            tradingStorage.savePositions(updatedPositions)
-            return updatedPositions
-          })
-        }
-      } else if (msg.type === 'xueqiu_cookie_updated') {
-        console.log('🔐 Xueqiu cookie updated')
-        setCookieSaving(false)
-        setCookieError(null)
-        setCookieDialogOpen(false)
-        setCookieInput('')
-        setCookieRequired(false)
-        tradingApi.requestSnapshot()
-      } else if (msg.type === 'error') {
-        console.error('⚠️ Error:', msg.message)
-        if (typeof msg.message === 'string' && msg.message.includes('Snowball cookie')) {
-          setCookieSaving(false)
-          openCookiePrompt(msg.message)
-        }
-      }
+        },
+      })
     })
 
     const unsubscribeClose = tradingApi.onClose(() => {
@@ -198,52 +158,16 @@ function App() {
     }
   }, [])
 
-  // 定时刷新行情数据并检查订单成交
+  // 启动自动交易逻辑
   useEffect(() => {
-    if (!userId || (window as any).isDocumentationPage) {
+    if (!userId || (window as any).isDocumentationPage || !tradingLogicRef.current) {
       return
     }
 
-    // 更新持仓列表（用于智能刷新）
-    const positionSymbols = positions.map(p => p.symbol)
-    const pendingOrderSymbols = orders.filter(o => o.status === 'pending').map(o => o.symbol)
-    const allSymbols = [...new Set([...positionSymbols, ...pendingOrderSymbols])]
-    marketDataService.updatePositions(allSymbols)
-
-    // 启动行情智能刷新（每5秒检查，但根据市场时间智能决定是否请求）
-    marketDataService.startAutoRefresh(5000)
-
-    // 订阅行情变化，当行情更新时检查订单
-    const unsubscribe = marketDataService.subscribe(() => {
-      // 检查是否有待成交订单
-      const hasPendingOrders = orders.some(o => o.status === 'pending')
-      if (!hasPendingOrders) {
-        return
-      }
-
-      // 尝试撮合订单
-      const result = checkAndFillOrders(overview, positions, orders, trades)
-      
-      if (result.filledCount > 0) {
-        console.log(`✅ ${result.filledCount} 个订单已成交`)
-        
-        // 更新状态
-        setOverview(result.overview)
-        setPositions(result.positions)
-        setOrders(result.orders)
-        setTrades(result.trades)
-
-        // 保存到本地存储
-        tradingStorage.saveOverview(result.overview)
-        tradingStorage.savePositions(result.positions)
-        tradingStorage.saveOrders(result.orders)
-        tradingStorage.saveTrades(result.trades)
-      }
-    })
+    tradingLogicRef.current.startAutoTrading({ overview: overview!, positions, orders, trades })
 
     return () => {
-      marketDataService.stopAutoRefresh()
-      unsubscribe()
+      tradingLogicRef.current?.stopAutoTrading()
     }
   }, [userId, overview, positions, orders, trades])
 
@@ -266,47 +190,12 @@ function App() {
     tradingApi.setXueqiuCookie(value)
   }
 
-  const placeOrder = (payload: any) => {
-    // 前端模拟下单逻辑
-    const result = executePlaceOrder(payload, overview, positions, orders, trades)
-    
-    if (!result.success) {
-      window.alert(result.message || '下单失败')
-      return
-    }
-
-    // 更新状态（订单状态为pending，等待行情匹配）
-    setOverview(result.overview)
-    setOrders(result.orders)
-    
-    // 保存到本地存储
-    tradingStorage.saveOverview(result.overview)
-    tradingStorage.saveOrders(result.orders)
-
-    console.log('📝 订单已提交，等待行情匹配:', result.message)
-
-    // 立即刷新行情，加快首次撮合
-    marketDataService.requestRefresh()
+  const placeOrder = (payload: PlaceOrderPayload) => {
+    tradingLogicRef.current?.placeOrder(payload)
   }
 
   const cancelOrder = (orderNo: string) => {
-    // 前端模拟撤单逻辑
-    const result = executeCancelOrder(orderNo, overview, positions, orders, trades)
-    
-    if (!result.success) {
-      window.alert(result.message || '撤单失败')
-      return
-    }
-
-    // 更新状态
-    setOverview(result.overview)
-    setOrders(result.orders)
-    
-    // 保存到本地存储
-    tradingStorage.saveOverview(result.overview)
-    tradingStorage.saveOrders(result.orders)
-
-    console.log('❌ 订单已取消:', result.message)
+    tradingLogicRef.current?.cancelOrder(orderNo)
   }
 
   const cookieDialog = (
@@ -344,7 +233,7 @@ function App() {
     </Dialog>
   )
 
-  if (!userId) {
+  if (!userId || !overview) {
     return (
       <>
         <div className="p-8">Connecting to trading server...</div>

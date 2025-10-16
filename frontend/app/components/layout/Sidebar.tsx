@@ -96,35 +96,38 @@ export default function Sidebar() {
 
   const toggle = () => setLang(lang === 'en' ? 'cn' : 'en')
   const navClass = ({ isActive }: { isActive: boolean }) => (
-    `flex items-center justify-center w-10 h-10 rounded-lg transition-colors ${
+    `flex flex-col items-center justify-center w-16 p-2 rounded-lg transition-colors ${
       isActive ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
     }`
   )
 
   return (
-    <aside className="w-16 border-r h-full p-2 flex flex-col items-center">
+    <aside className="w-20 border-r h-full p-2 flex flex-col items-center">
       <nav className="space-y-4">
         <NavLink
           to="/documentation"
           className={navClass}
-          title={t('sidebar.documentation') || 'Documentation'}
+          title={t('sidebar.documentation')}
           end
         >
-          <BookOpen className="w-5 h-5" />
+          <BookOpen className="w-5 h-5 mb-1" />
+          <span className="text-xs mt-1">{t('sidebar.documentation')}</span>
         </NavLink>
         <NavLink
           to="/trading"
           className={navClass}
-          title={t('sidebar.trading')}
+          title={t('sidebar.placeOrder')}
         >
-          <ArrowLeftRight className="w-5 h-5" />
+          <ArrowLeftRight className="w-5 h-5 mb-1" />
+          <span className="text-xs mt-1">{t('sidebar.placeOrder')}</span>
         </NavLink>
         <NavLink
           to="/asset-trend"
           className={navClass}
           title={t('sidebar.assetTrend')}
         >
-          <PieChart className="w-5 h-5" />
+          <PieChart className="w-5 h-5 mb-1" />
+          <span className="text-xs mt-1">{t('sidebar.trend')}</span>
         </NavLink>
       </nav>
       <Dialog open={settingsOpen} onOpenChange={handleOpenChange}>

@@ -173,6 +173,13 @@ class MarketDataService {
     
     if (openMarkets.length > 0) {
       console.log(`📡 刷新行情 [开盘: ${openMarkets.join(', ')}]`)
+      console.log(`   📋 持仓股票列表:`)
+      if (symbols.us.length > 0) console.log(`     🇺🇸 US: ${symbols.us.join(', ')}`)
+      if (symbols.hk.length > 0) console.log(`     🇭🇰 HK: ${symbols.hk.join(', ')}`)
+      if (symbols.cn.length > 0) console.log(`     🇨🇳 CN: ${symbols.cn.join(', ')}`)
+      
+      // 显示当前行情
+      setTimeout(() => this.logAllQuotes(), 1000) // 延迟1秒显示行情，让后端有时间响应
     }
   }
 
