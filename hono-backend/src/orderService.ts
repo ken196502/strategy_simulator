@@ -66,7 +66,14 @@ const getCashKeys = (market: MarketType) => {
   return { currency, currentKey, frozenKey }
 }
 
-const calcCommission = (config: { minCommission: number; commissionRate: number }, notional: number) => {
+const calcCommission = (config: { minCommission: number; commissionRate: number }, notional: number, quantity: number = 1) => {
+  // For US market, commission is $0.01 per share with $15 minimum
+  if (config.commissionRate === 0.01) {
+    const perShareFee = 0.01
+    const totalFee = perShareFee * quantity
+    return Math.max(totalFee, config.minCommission)
+  }
+  // For other markets, use percentage-based commission with minimum
   const pctFee = notional * config.commissionRate
   return Math.max(pctFee, config.minCommission)
 }

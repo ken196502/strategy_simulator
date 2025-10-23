@@ -88,22 +88,22 @@ export interface TradingState {
 const marketDefaults: Record<MarketType, TradingConfig> = {
   US: {
     market: 'US',
-    minCommission: 1,
-    commissionRate: 0.005,
+    minCommission: 15, // $15 minimum
+    commissionRate: 0.01, // $0.01 per share
     minOrderQuantity: 1,
     lotSize: 1,
   },
   HK: {
     market: 'HK',
-    minCommission: 20,
-    commissionRate: 0.00027,
+    minCommission: 100, // HKD 100 minimum
+    commissionRate: 0.0025, // 0.25%
     minOrderQuantity: 100,
     lotSize: 100,
   },
   CN: {
     market: 'CN',
-    minCommission: 5,
-    commissionRate: 0.001,
+    minCommission: 100, // CNY 100 minimum
+    commissionRate: 0.0025, // 0.25%
     minOrderQuantity: 100,
     lotSize: 100,
   },
