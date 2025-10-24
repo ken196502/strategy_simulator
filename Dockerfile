@@ -24,7 +24,6 @@ COPY frontend/index.html ./frontend/
 COPY frontend/postcss.config.js ./frontend/
 COPY frontend/tsconfig.json ./frontend/
 COPY frontend/components.json ./frontend/
-COPY frontend/doc.md ./frontend/
 
 # Copy backend source code
 COPY hono-backend/src ./hono-backend/src
@@ -34,8 +33,9 @@ COPY hono-backend/tsconfig.json ./hono-backend/
 WORKDIR /app/frontend
 RUN pnpm build
 
-# Copy doc.md to public directory
-RUN cp doc.md ../hono-backend/public/doc.md
+# Copy doc.md after build to ensure cache busting without rebuilding frontend
+COPY frontend/doc.md ./doc.md
+RUN cp ./doc.md ../hono-backend/public/doc.md
 
 # Build backend
 WORKDIR /app/hono-backend
